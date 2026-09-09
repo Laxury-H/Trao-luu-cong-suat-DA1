@@ -1,0 +1,188 @@
+{
+  "name": "Lưới 3 nút — máy phát nút 2 chạm Qmax",
+  "converged": true,
+  "method": "Newton-Raphson polar with backtracking",
+  "base_mva": 100.0,
+  "tolerance_pu": 1e-08,
+  "enforce_q_limits": true,
+  "iterations": 6,
+  "passes": 2,
+  "max_mismatch_pu": 2.1978215584458167e-11,
+  "buses": [
+    {
+      "id": "1",
+      "type_input": "SLACK",
+      "type_final": "SLACK",
+      "vm_pu": 1.04,
+      "va_deg": 0.0,
+      "voltage_kv": 114.4,
+      "pg_mw": 52.698671719799606,
+      "qg_mvar": 30.349473396209266,
+      "pd_mw": 0.0,
+      "qd_mvar": 0.0,
+      "p_injection_mw": 52.698671719799606,
+      "q_injection_mvar": 30.349473396209266,
+      "p_shunt_mw": 0.0,
+      "q_shunt_mvar": 0.0,
+      "p_balance_error_mw": 0.0,
+      "q_balance_error_mvar": 0.0
+    },
+    {
+      "id": "2",
+      "type_input": "PV",
+      "type_final": "PQ",
+      "vm_pu": 1.0281373015846336,
+      "va_deg": -0.3143116455116365,
+      "voltage_kv": 113.0951031743097,
+      "pg_mw": 50.0,
+      "qg_mvar": 10.0,
+      "pd_mw": 20.0,
+      "qd_mvar": 10.0,
+      "p_injection_mw": 29.99999999962987,
+      "q_injection_mvar": 2.1978215584458166e-09,
+      "p_shunt_mw": 0.0,
+      "q_shunt_mvar": 0.0,
+      "p_balance_error_mw": 3.701288164847938e-10,
+      "q_balance_error_mvar": -2.1978215584458166e-09
+    },
+    {
+      "id": "3",
+      "type_input": "PQ",
+      "type_final": "PQ",
+      "vm_pu": 0.9728482774013363,
+      "va_deg": -4.328069125318398,
+      "voltage_kv": 107.013310514147,
+      "pg_mw": 0.0,
+      "qg_mvar": 0.0,
+      "pd_mw": 80.0,
+      "qd_mvar": 30.0,
+      "p_injection_mw": -79.99999999941544,
+      "q_injection_mvar": -30.000000000035236,
+      "p_shunt_mw": 0.0,
+      "q_shunt_mvar": 0.0,
+      "p_balance_error_mw": -5.845635087098344e-10,
+      "q_balance_error_mvar": 3.523581426634337e-11
+    }
+  ],
+  "branches": [
+    {
+      "id": "L12",
+      "from_bus": "1",
+      "to_bus": "2",
+      "status": true,
+      "p_from_mw": 14.975203137385629,
+      "q_from_mvar": 13.974691207417253,
+      "p_to_mw": -14.888752330592284,
+      "q_to_mvar": -16.92333825340196,
+      "p_loss_mw": 0.08645080679334427,
+      "q_net_mvar": -2.948647045984705,
+      "i_from_ka": 0.1033723858060356,
+      "i_to_ka": 0.11506922692113128,
+      "loading_percent": 22.54050406714045
+    },
+    {
+      "id": "L13",
+      "from_bus": "1",
+      "to_bus": "3",
+      "status": true,
+      "p_from_mw": 37.723468582414036,
+      "q_from_mvar": 16.374782188792153,
+      "p_to_mw": -36.43848419731251,
+      "q_to_mvar": -15.054871247041108,
+      "p_loss_mw": 1.2849843851015237,
+      "q_net_mvar": 1.3199109417510453,
+      "i_from_ka": 0.20754391655178972,
+      "i_to_ka": 0.21270842034616036,
+      "loading_percent": 41.12412398603481
+    },
+    {
+      "id": "L23",
+      "from_bus": "2",
+      "to_bus": "3",
+      "status": true,
+      "p_from_mw": 44.88875233022218,
+      "q_from_mvar": 16.923338255599596,
+      "p_to_mw": -43.56151580210296,
+      "q_to_mvar": -14.945128752994346,
+      "p_loss_mw": 1.3272365281192222,
+      "q_net_mvar": 1.9782095026052495,
+      "i_from_ka": 0.2449015733799669,
+      "i_to_ka": 0.2484666311097671,
+      "loading_percent": 47.972903429722365
+    }
+  ],
+  "q_limit_switches": [
+    {
+      "bus": "2",
+      "after_pass": 1,
+      "bound": "Qmax",
+      "q_before_mvar": 73.72419912365402,
+      "q_fixed_mvar": 10.0
+    }
+  ],
+  "summary": {
+    "pg_total_mw": 102.6986717197996,
+    "qg_total_mvar": 40.34947339620926,
+    "pd_total_mw": 100.0,
+    "qd_total_mvar": 40.0,
+    "p_branch_loss_mw": 2.69867172001409,
+    "q_branch_net_mvar": 0.34947339837158964,
+    "p_shunt_mw": 0.0,
+    "q_shunt_mvar": 0.0,
+    "p_total_loss_mw": 2.69867172001409,
+    "q_network_net_mvar": 0.34947339837158964,
+    "p_balance_error_mw": -2.1448443021654384e-10,
+    "q_balance_error_mvar": -2.1623272061788157e-09
+  },
+  "history": [
+    {
+      "pass": 1,
+      "iteration": 0,
+      "max_mismatch_pu": 0.6499999999999997,
+      "step_scale": 1.0
+    },
+    {
+      "pass": 1,
+      "iteration": 1,
+      "max_mismatch_pu": 0.02118310571516485,
+      "step_scale": 1.0
+    },
+    {
+      "pass": 1,
+      "iteration": 2,
+      "max_mismatch_pu": 6.305816608759285e-05,
+      "step_scale": 1.0
+    },
+    {
+      "pass": 1,
+      "iteration": 3,
+      "max_mismatch_pu": 5.876946151950335e-10
+    },
+    {
+      "pass": 2,
+      "iteration": 0,
+      "max_mismatch_pu": 0.6372419912365402,
+      "step_scale": 1.0
+    },
+    {
+      "pass": 2,
+      "iteration": 1,
+      "max_mismatch_pu": 0.019102785185480135,
+      "step_scale": 1.0
+    },
+    {
+      "pass": 2,
+      "iteration": 2,
+      "max_mismatch_pu": 1.9770568082734688e-05,
+      "step_scale": 1.0
+    },
+    {
+      "pass": 2,
+      "iteration": 3,
+      "max_mismatch_pu": 2.1978215584458167e-11
+    }
+  ],
+  "warnings": [
+    "Nút 2: PV → PQ tại Qmax=10 Mvar; điện áp được phép thay đổi."
+  ]
+}

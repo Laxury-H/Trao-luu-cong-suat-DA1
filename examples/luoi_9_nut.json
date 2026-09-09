@@ -1,0 +1,27 @@
+{
+  "name": "MATPOWER case9 — 9 nút, 3 máy phát",
+  "source": "Thông số trào lưu chuyển từ https://matpower.org/docs/ref/matpower6.0/case9.html ; không sử dụng dữ liệu chi phí OPF. Tỷ số tap=0 của MATPOWER được đổi thành 1.",
+  "base_mva": 100,
+  "buses": [
+    {"id": "1", "type": "SLACK", "vm_pu": 1.0, "base_kv": 345, "qmin_mvar": -300, "qmax_mvar": 300, "pmin_mw": 10, "pmax_mw": 250},
+    {"id": "2", "type": "PV", "vm_pu": 1.0, "pg_mw": 163, "base_kv": 345, "qmin_mvar": -300, "qmax_mvar": 300, "pmin_mw": 10, "pmax_mw": 300},
+    {"id": "3", "type": "PV", "vm_pu": 1.0, "pg_mw": 85, "base_kv": 345, "qmin_mvar": -300, "qmax_mvar": 300, "pmin_mw": 10, "pmax_mw": 270},
+    {"id": "4", "type": "PQ", "base_kv": 345},
+    {"id": "5", "type": "PQ", "pd_mw": 90, "qd_mvar": 30, "base_kv": 345},
+    {"id": "6", "type": "PQ", "base_kv": 345},
+    {"id": "7", "type": "PQ", "pd_mw": 100, "qd_mvar": 35, "base_kv": 345},
+    {"id": "8", "type": "PQ", "base_kv": 345},
+    {"id": "9", "type": "PQ", "pd_mw": 125, "qd_mvar": 50, "base_kv": 345}
+  ],
+  "branches": [
+    {"id": "L14", "from_bus": "1", "to_bus": "4", "r_pu": 0, "x_pu": 0.0576, "rate_mva": 250},
+    {"id": "L45", "from_bus": "4", "to_bus": "5", "r_pu": 0.017, "x_pu": 0.092, "b_pu": 0.158, "rate_mva": 250},
+    {"id": "L56", "from_bus": "5", "to_bus": "6", "r_pu": 0.039, "x_pu": 0.17, "b_pu": 0.358, "rate_mva": 150},
+    {"id": "L36", "from_bus": "3", "to_bus": "6", "r_pu": 0, "x_pu": 0.0586, "rate_mva": 300},
+    {"id": "L67", "from_bus": "6", "to_bus": "7", "r_pu": 0.0119, "x_pu": 0.1008, "b_pu": 0.209, "rate_mva": 150},
+    {"id": "L78", "from_bus": "7", "to_bus": "8", "r_pu": 0.0085, "x_pu": 0.072, "b_pu": 0.149, "rate_mva": 250},
+    {"id": "L82", "from_bus": "8", "to_bus": "2", "r_pu": 0, "x_pu": 0.0625, "rate_mva": 250},
+    {"id": "L89", "from_bus": "8", "to_bus": "9", "r_pu": 0.032, "x_pu": 0.161, "b_pu": 0.306, "rate_mva": 250},
+    {"id": "L94", "from_bus": "9", "to_bus": "4", "r_pu": 0.01, "x_pu": 0.085, "b_pu": 0.176, "rate_mva": 250}
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Lưới 3 nút — máy phát nút 2 chạm Qmax",
+  "description": "Điện áp đặt tại nút 2 cao và Qmax nhỏ để minh họa PV chuyển thành PQ.",
+  "base_mva": 100,
+  "buses": [
+    {"id": "1", "type": "SLACK", "vm_pu": 1.04, "base_kv": 110},
+    {"id": "2", "type": "PV", "vm_pu": 1.06, "pg_mw": 50, "pd_mw": 20, "qd_mvar": 10, "qmin_mvar": -10, "qmax_mvar": 10, "base_kv": 110},
+    {"id": "3", "type": "PQ", "pd_mw": 80, "qd_mvar": 30, "base_kv": 110}
+  ],
+  "branches": [
+    {"id": "L12", "from_bus": "1", "to_bus": "2", "r_pu": 0.02, "x_pu": 0.06, "b_pu": 0.03, "rate_mva": 100},
+    {"id": "L13", "from_bus": "1", "to_bus": "3", "r_pu": 0.08, "x_pu": 0.24, "b_pu": 0.025, "rate_mva": 100},
+    {"id": "L23", "from_bus": "2", "to_bus": "3", "r_pu": 0.06, "x_pu": 0.18, "b_pu": 0.02, "rate_mva": 100}
+  ]
+}

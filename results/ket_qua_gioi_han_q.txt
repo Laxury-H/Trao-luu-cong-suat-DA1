@@ -1,0 +1,25 @@
+CHẾ ĐỘ XÁC LẬP — Lưới 3 nút — máy phát nút 2 chạm Qmax
+Hội tụ: 6 bước Newton, 2 lượt giải; sai lệch 2.198e-11 p.u.
+Cơ sở: 100 MVA | Công suất tổng ba pha | Góc: độ
+
+KẾT QUẢ NÚT
+Nút          Loại       U (pu)   Góc (độ)     Pg (MW)   Qg (Mvar)
+1            SLACK      1.040000    0.00000    52.69867    30.34947
+2            PV→PQ      1.028137   -0.31431    50.00000    10.00000
+3            PQ         0.972848   -4.32807     0.00000     0.00000
+
+KẾT QUẢ NHÁNH (công suất dương: từ nút đi vào nhánh)
+Nhánh         Đầu/cuối         Pf (MW)  Qf (Mvar)    Pt (MW)  Qt (Mvar)   ΔP (MW)    Tải (%)
+L12           1→2               14.9752    13.9747   -14.8888   -16.9233   0.08645      22.54
+L13           1→3               37.7235    16.3748   -36.4385   -15.0549   1.28498      41.12
+L23           2→3               44.8888    16.9233   -43.5615   -14.9451   1.32724      47.97
+
+Tổng phát: 102.698672 MW; 40.349473 Mvar.
+Tổng phụ tải: 100.000000 MW; 40.000000 Mvar.
+Tổn thất P trên nhánh: 2.698672 MW; shunt nút: 0.000000 MW.
+Tổng tổn thất P: 2.698672 MW.
+Q thuần của mạng: 0.349473 Mvar (âm nghĩa là mạng phát Q).
+Sai số cân bằng P/Q: -2.145e-10 MW / -2.162e-09 Mvar.
+
+CẢNH BÁO / THAY ĐỔI LOẠI NÚT
+• Nút 2: PV → PQ tại Qmax=10 Mvar; điện áp được phép thay đổi.

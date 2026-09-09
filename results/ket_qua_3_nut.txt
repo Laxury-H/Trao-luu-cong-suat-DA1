@@ -1,0 +1,22 @@
+CHẾ ĐỘ XÁC LẬP — Lưới mẫu 3 nút — SLACK, PV, PQ
+Hội tụ: 3 bước Newton, 1 lượt giải; sai lệch 6.370e-10 p.u.
+Cơ sở: 100 MVA | Công suất tổng ba pha | Góc: độ
+
+KẾT QUẢ NÚT
+Nút          Loại       U (pu)   Góc (độ)     Pg (MW)   Qg (Mvar)
+1            SLACK      1.060000    0.00000    52.74517    46.98589
+2            PV         1.040000   -0.14866    50.00000    -6.74668
+3            PQ         0.989366   -4.10575     0.00000     0.00000
+
+KẾT QUẢ NHÁNH (công suất dương: từ nút đi vào nhánh)
+Nhánh         Đầu/cuối         Pf (MW)  Qf (Mvar)    Pt (MW)  Qt (Mvar)   ΔP (MW)    Tải (%)
+L12           1→2               14.8924    28.6900   -14.6886   -31.3867   0.20371      34.65
+L13           1→3               37.8528    18.2959   -36.5563   -17.0344   1.29651      42.04
+L23           2→3               44.6886    14.6400   -43.4437   -12.9656   1.24496      47.03
+
+Tổng phát: 102.745173 MW; 40.239217 Mvar.
+Tổng phụ tải: 100.000000 MW; 40.000000 Mvar.
+Tổn thất P trên nhánh: 2.745173 MW; shunt nút: 0.000000 MW.
+Tổng tổn thất P: 2.745173 MW.
+Q thuần của mạng: 0.239217 Mvar (âm nghĩa là mạng phát Q).
+Sai số cân bằng P/Q: -3.709e-08 MW / -6.370e-08 Mvar.

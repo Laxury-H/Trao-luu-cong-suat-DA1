@@ -1,0 +1,155 @@
+{
+  "name": "Lưới mẫu 3 nút — SLACK, PV, PQ",
+  "converged": true,
+  "method": "Newton-Raphson polar with backtracking",
+  "base_mva": 100.0,
+  "tolerance_pu": 1e-08,
+  "enforce_q_limits": true,
+  "iterations": 3,
+  "passes": 1,
+  "max_mismatch_pu": 6.369995086963343e-10,
+  "buses": [
+    {
+      "id": "1",
+      "type_input": "SLACK",
+      "type_final": "SLACK",
+      "vm_pu": 1.06,
+      "va_deg": 0.0,
+      "voltage_kv": 116.60000000000001,
+      "pg_mw": 52.745173281221,
+      "qg_mvar": 46.9858932217654,
+      "pd_mw": 0.0,
+      "qd_mvar": 0.0,
+      "p_injection_mw": 52.745173281221,
+      "q_injection_mvar": 46.9858932217654,
+      "p_shunt_mw": 0.0,
+      "q_shunt_mvar": 0.0,
+      "p_balance_error_mw": 0.0,
+      "q_balance_error_mvar": 0.0
+    },
+    {
+      "id": "2",
+      "type_input": "PV",
+      "type_final": "PV",
+      "vm_pu": 1.04,
+      "va_deg": -0.14866211774573382,
+      "voltage_kv": 114.4,
+      "pg_mw": 50.0,
+      "qg_mvar": -6.746676026606021,
+      "pd_mw": 20.0,
+      "qd_mvar": 10.0,
+      "p_injection_mw": 29.999999989067955,
+      "q_injection_mvar": -16.74667602660602,
+      "p_shunt_mw": 0.0,
+      "q_shunt_mvar": 0.0,
+      "p_balance_error_mw": 1.0932044602895985e-08,
+      "q_balance_error_mvar": 0.0
+    },
+    {
+      "id": "3",
+      "type_input": "PQ",
+      "type_final": "PQ",
+      "vm_pu": 0.9893662833834603,
+      "va_deg": -4.10575477410144,
+      "voltage_kv": 108.83029117218064,
+      "pg_mw": 0.0,
+      "qg_mvar": 0.0,
+      "pd_mw": 80.0,
+      "qd_mvar": 30.0,
+      "p_injection_mw": -79.99999995198066,
+      "q_injection_mvar": -29.99999993630005,
+      "p_shunt_mw": 0.0,
+      "q_shunt_mvar": 0.0,
+      "p_balance_error_mw": -4.80193449448052e-08,
+      "q_balance_error_mvar": -6.369995020349961e-08
+    }
+  ],
+  "branches": [
+    {
+      "id": "L12",
+      "from_bus": "1",
+      "to_bus": "2",
+      "status": true,
+      "p_from_mw": 14.892352944151954,
+      "q_from_mvar": 28.69000030613545,
+      "p_to_mw": -14.688642171640154,
+      "q_to_mvar": -31.386667988600163,
+      "p_loss_mw": 0.20371077251179948,
+      "q_net_mvar": -2.6966676824647138,
+      "i_from_ka": 0.16005816450013952,
+      "i_to_ka": 0.1748892027473244,
+      "loading_percent": 34.653703067249594
+    },
+    {
+      "id": "L13",
+      "from_bus": "1",
+      "to_bus": "3",
+      "status": true,
+      "p_from_mw": 37.852820337069076,
+      "q_from_mvar": 18.29589291562972,
+      "p_to_mw": -36.55631518327724,
+      "q_to_mvar": -17.03443450762429,
+      "p_loss_mw": 1.2965051537918342,
+      "q_net_mvar": 1.2614584080054314,
+      "i_from_ka": 0.20817560431051274,
+      "i_to_ka": 0.21395450729037238,
+      "loading_percent": 42.04254636734816
+    },
+    {
+      "id": "L23",
+      "from_bus": "2",
+      "to_bus": "3",
+      "status": true,
+      "p_from_mw": 44.68864216070813,
+      "q_from_mvar": 14.639991961993864,
+      "p_to_mw": -43.44368476870337,
+      "q_to_mvar": -12.965565428675452,
+      "p_loss_mw": 1.244957392004757,
+      "q_net_mvar": 1.674426533318412,
+      "i_from_ka": 0.23732713893415686,
+      "i_to_ka": 0.24051604712070457,
+      "loading_percent": 47.02556860703616
+    }
+  ],
+  "q_limit_switches": [],
+  "summary": {
+    "pg_total_mw": 102.745173281221,
+    "qg_total_mvar": 40.239217195159384,
+    "pd_total_mw": 100.0,
+    "qd_total_mvar": 40.0,
+    "p_branch_loss_mw": 2.7451733183083906,
+    "q_branch_net_mvar": 0.2392172588591297,
+    "p_shunt_mw": 0.0,
+    "q_shunt_mvar": 0.0,
+    "p_total_loss_mw": 2.7451733183083906,
+    "q_network_net_mvar": 0.2392172588591297,
+    "p_balance_error_mw": -3.708739093610802e-08,
+    "q_balance_error_mvar": -6.369974592246308e-08
+  },
+  "history": [
+    {
+      "pass": 1,
+      "iteration": 0,
+      "max_mismatch_pu": 0.6583333333333334,
+      "step_scale": 1.0
+    },
+    {
+      "pass": 1,
+      "iteration": 1,
+      "max_mismatch_pu": 0.020617092373131585,
+      "step_scale": 1.0
+    },
+    {
+      "pass": 1,
+      "iteration": 2,
+      "max_mismatch_pu": 6.366401376928232e-05,
+      "step_scale": 1.0
+    },
+    {
+      "pass": 1,
+      "iteration": 3,
+      "max_mismatch_pu": 6.369995086963343e-10
+    }
+  ],
+  "warnings": []
+}
