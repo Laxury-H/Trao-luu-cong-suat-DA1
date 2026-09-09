@@ -276,6 +276,41 @@ API nhận một `dict`; không sửa dữ liệu đầu vào. Lỗi dữ liệu
   3. **Trang 3: Công suất nhánh**: Chi tiết dòng $P, Q, I$ hai đầu, tổn thất $\Delta P, \Delta Q$ và % mang tải.
   4. **Trang 4: Cảnh báo & vi phạm**: Tóm tắt danh sách cảnh báo nút sụt áp, quá áp hoặc nhánh quá tải.
 
+### 7.5. So sánh 4 phương pháp tính toán trào lưu công suất (NR, FDPF, GS, DC)
+Chương trình tích hợp đầy đủ **4 thuật toán trào lưu công suất kinh điển** trong kỹ thuật hệ thống điện:
+
+1. **Newton–Raphson (NR)**:
+   - *Bản chất toán học*: Khai triển Taylor hệ phương trình phi tuyến AC, cập nhật nghiệm qua ma trận đạo hàm riêng Jacobian $2N \times 2N$.
+   - *Ưu điểm*: Hội tụ bậc hai (quadratic, chỉ mất 3–5 bước lặp), độ chính xác tuyệt đối, rất ổn định khi có giới hạn Q. Tiêu chuẩn công nghiệp.
+   - *Nhược điểm*: Khối lượng tính toán mỗi bước lớn (tính và nghịch đảo Jacobian).
+2. **Phân tách nhanh (Fast Decoupled Power Flow - FDPF XB)**:
+   - *Bản chất toán học*: Bỏ qua các đạo hàm chéo ($P$-$\theta$ và $Q$-$V$) dựa trên đặc tính $X \gg R$ của lưới truyền tải. Giả định $V \approx 1.0$, ma trận rút gọn thành 2 ma trận hằng số $B'$ và $B''$.
+   - *Ưu điểm*: Ma trận $B', B''$ không đổi nên chỉ phân tích LU 1 lần duy nhất lúc đầu! Mỗi bước lặp nhanh gấp 4–5 lần so với NR. Tiết kiệm RAM.
+   - *Nhược điểm*: Cần nhiều bước lặp hơn NR (6–10 bước). Kém hội tụ trên lưới phân phối $R/X$ cao.
+3. **Gauss–Seidel (GS)**:
+   - *Bản chất toán học*: Lặp phương trình điện áp nút phức liên tiếp (Successive Displacement).
+   - *Ưu điểm*: Thuật toán cực kỳ đơn giản, không cần ma trận Jacobian, tốn ít bộ nhớ nhất.
+   - *Nhược điểm*: Hội tụ tuyến tính (chậm, hàng chục đến hàng trăm bước), số bước lặp tăng theo số nút, nhạy cảm với topology lưới.
+4. **Trào lưu một chiều (DC Power Flow)**:
+   - *Bản chất toán học*: Tuyến tính hóa hoàn toàn ($R = 0, V = 1.0, \sin\theta \approx \theta$), giải hệ tuyến tính duy nhất 1 bước $P = B \theta$.
+   - *Ưu điểm*: Giải đúng 1 lần (không lặp), 100% không bao giờ phân kỳ, tốc độ siêu nhanh.
+   - *Nhược điểm*: Không tính được $Q$ và sụt áp $U$, sai số dòng công suất $P$ từ 5–10% so với AC.
+
+**Cách sử dụng trên giao diện:**
+- Tại khung bên trái (mục **02 Thiết lập bộ giải**), chọn phương pháp mong muốn tại ô **Phương pháp giải** rồi bấm **F5**.
+- Mở tab **"⚡ So sánh 4 phương pháp"** và bấm nút **"🚀 Chạy so sánh cả 4 phương pháp"**: Hệ thống sẽ giải đồng thời cả 4 phương pháp, tổng hợp bảng KPI so sánh (số bước, thời gian ms, sai số áp, tổn thất), bảng chi tiết điện áp nút, bảng dòng công suất nhánh và cho phép bấm **"Xuất bảng so sánh CSV..."**.
+
+**Cách sử dụng trên dòng lệnh:**
+```bash
+# Chọn phương pháp giải cụ thể
+python powerflow.py examples/luoi_9_nut.json --method fdpf
+python powerflow.py examples/luoi_9_nut.json --method gs
+python powerflow.py examples/luoi_9_nut.json --method dc
+
+# Chạy so sánh đối chuẩn cả 4 phương pháp và in bảng đối chiếu
+python powerflow.py examples/luoi_9_nut.json --benchmark
+```
+
 ## 8. Kiểm chứng và phạm vi
 
 Chạy lại bộ kiểm thử:
@@ -284,7 +319,7 @@ Chạy lại bộ kiểm thử:
 python -m unittest discover -s tests -v
 ```
 
-Bộ giải đã vượt qua **48 kiểm thử tự động** trên Python 3.13 / NumPy với 100% độ chính xác: bài toán 2 nút nghiệm giải tích, lưới IEEE 9 nút, IEEE 14 nút, IEEE 30 nút, kiểm thử N-1 contingency, kiểm thử so sánh kịch bản, kiểm thử xuất nhập Excel/CSV và các thuật toán bố cục sơ đồ.
+Bộ giải đã vượt qua **55 kiểm thử tự động** trên Python 3.13 / NumPy với 100% độ chính xác: bài toán 2 nút nghiệm giải tích, lưới IEEE 9 nút, IEEE 14 nút, IEEE 30 nút, kiểm thử cả 4 phương pháp NR/FDPF/GS/DC, kiểm thử N-1 contingency, kiểm thử so sánh kịch bản, kiểm thử xuất nhập Excel/CSV và các thuật toán bố cục sơ đồ.
 
 Giới hạn hiện tại:
 
@@ -300,9 +335,10 @@ Giới hạn hiện tại:
 | Tệp / thư mục | Nội dung |
 |---|---|
 | `powerflow.py` | Bộ giải trào lưu công suất Newton–Raphson, kiểm tra dữ liệu và CLI |
+| `solvers.py` | Động cơ 4 phương pháp trào lưu (NR, FDPF, Gauss-Seidel, DC Flow) và benchmark |
 | `contingency.py` | Phân tích sự cố N-1 tự động, tính chỉ số PI và xếp hạng mức độ nguy cấp |
 | `data_io.py` | Nhập/xuất dữ liệu Excel (.xlsx) & CSV, tạo template và xuất báo cáo Excel 4 sheets |
-| `gui.py` | Giao diện đồ họa chính (Desktop UI) với chế độ N-1 và so sánh kịch bản |
+| `gui.py` | Giao diện đồ họa Desktop UI với chế độ 4 bộ giải, N-1 và so sánh kịch bản |
 | `ui_table_editor.py` | Trình nhập liệu bảng trực quan (Bảng Nút & Bảng Nhánh) |
 | `ui_topology.py` | Sơ đồ 1 sợi trực quan tương tác, thuật toán bố cục lực đẩy, đa tầng & cấp áp |
 | `ui_dashboard.py` | Bảng đồng hồ KPIs, biểu đồ điện áp và tiến trình hội tụ |
@@ -311,7 +347,7 @@ Giới hạn hiện tại:
 | `requirements.txt` | Thư viện cần cài (numpy, matplotlib, openpyxl) |
 | `examples/` | Dữ liệu mẫu JSON (3 nút, 9 nút, IEEE 14 nút, IEEE 30 nút) và template Excel |
 | `results/` | Kết quả JSON và báo cáo TXT đã tính |
-| `tests/` | Bộ 48 bài kiểm thử tự động toàn diện |
+| `tests/` | Bộ 55 bài kiểm thử tự động toàn diện (`test_solvers.py`, `test_powerflow.py`, `test_gui.py`...) |
 | `HUONG_DAN.md` | Hướng dẫn sử dụng chi tiết |
 | `KIEM_CHUNG.md` | Báo cáo kiểm chứng |
 

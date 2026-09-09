@@ -22,12 +22,20 @@ from data_io import (
     load_from_excel,
 )
 from powerflow import CaseError, format_report, parse_case, solve_power_flow, validate_case
+from solvers import SOLVER_DESCRIPTIONS, benchmark_all_solvers
 from ui_dashboard import Dashboard
 from ui_editor import JsonEditor
 from ui_table_editor import TableInputEditor
 from ui_topology import NetworkDiagram
 
 ROOT = Path(__file__).resolve().parent
+
+SOLVER_METHODS = [
+    ("Newton–Raphson (Chuẩn CN)", "NR"),
+    ("Phân tách nhanh (FDPF)", "FDPF"),
+    ("Gauss–Seidel (Lặp điện áp)", "GS"),
+    ("Trào lưu một chiều (DC Flow)", "DC"),
+]
 
 THEMES = {
     "light": {
@@ -120,10 +128,13 @@ class PowerFlowApp(tk.Tk):
         self._validation_after = self._poll_after = None
         self._job_limits = {}
         self.worker_queue = queue.Queue()
+        self.bench_queue = queue.Queue()
+        self.n1_queue = queue.Queue()
 
         self.tolerance = tk.StringVar(value="1e-8")
         self.max_iter = tk.StringVar(value="50")
         self.enforce_q = tk.BooleanVar(value=True)
+        self.solver_method = tk.StringVar(value="Newton–Raphson (Chuẩn CN)")
         self.status = tk.StringVar(value="Sẵn sàng")
         self.state_text = tk.StringVar(value="CHỜ TÍNH TOÁN")
         self.file_label = tk.StringVar()
@@ -139,7 +150,7 @@ class PowerFlowApp(tk.Tk):
         self._build_footer()
         self._build_body()
 
-        for var in (self.tolerance, self.max_iter, self.enforce_q):
+        for var in (self.tolerance, self.max_iter, self.enforce_q, self.solver_method):
             var.trace_add("write", self._options_changed)
         self.editor.bind("<<Modified>>", self.on_edit)
 
@@ -262,7 +273,7 @@ class PowerFlowApp(tk.Tk):
         btn_help = ttk.Button(self.header, text="Hướng dẫn  F1", command=self.show_help, style="Small.TButton")
         btn_help.pack(side="right", padx=(8, 0))
 
-        lbl3 = tk.Label(self.header, text="AC ba pha cân bằng\nNewton–Raphson", justify="right",
+        lbl3 = tk.Label(self.header, text="4 Phương pháp trào lưu\nNR · FDPF · GS · DC", justify="right",
                         bg=theme["header_bg"], fg=theme["header_sub"], font=("Segoe UI", 9))
         lbl3.pack(side="right", padx=(0, 12))
 
@@ -308,12 +319,23 @@ class PowerFlowApp(tk.Tk):
         if hasattr(self, "compare_bus_table"):
             self._configure_table_tags(self.compare_bus_table)
             self._configure_table_tags(self.compare_branch_table)
+        if hasattr(self, "bench_kpi_table"):
+            self._configure_table_tags(self.bench_kpi_table)
+            self._configure_table_tags(self.bench_bus_table)
+            self._configure_table_tags(self.bench_branch_table)
         if hasattr(self, "n1_cards"):
             for card in self.n1_cards.values():
                 card.configure(bg=theme["surface"])
         if hasattr(self, "compare_cards"):
             for card in self.compare_cards.values():
                 card.configure(bg=theme["surface"])
+        if hasattr(self, "bench_cards"):
+            for card in self.bench_cards:
+                card.configure(bg=theme["surface"], highlightbackground=theme["line"])
+                for child in card.winfo_children():
+                    child.configure(bg=theme["surface"])
+        if hasattr(self, "bench_theory_text"):
+            self.bench_theory_text.configure(background=theme["report_bg"], foreground=theme["report_fg"])
 
         self._set_state(self.state_text.get(), self._current_tone)
 
@@ -343,6 +365,7 @@ class PowerFlowApp(tk.Tk):
 
         self._build_contingency_tab()
         self._build_scenario_compare_tab()
+        self._build_solvers_benchmark_tab()
 
         report_frame = ttk.Frame(self.tabs, style="Card.TFrame", padding=14)
         self.tabs.add(report_frame, text="Báo cáo")
@@ -413,13 +436,20 @@ class PowerFlowApp(tk.Tk):
         settings = ttk.Frame(parent, style="Card.TFrame")
         settings.pack(fill="x", pady=(6, 4))
         settings.columnconfigure((0, 1), weight=1)
-        ttk.Label(settings, text="Dung sai (p.u.)", style="CardMuted.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(settings, text="Bước tối đa / lượt", style="CardMuted.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 0))
+
+        ttk.Label(settings, text="Phương pháp giải", style="CardMuted.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        self.method_combobox = ttk.Combobox(settings, textvariable=self.solver_method,
+                                            values=[label for label, _ in SOLVER_METHODS],
+                                            state="readonly")
+        self.method_combobox.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 6))
+
+        ttk.Label(settings, text="Dung sai (p.u.)", style="CardMuted.TLabel").grid(row=2, column=0, sticky="w")
+        ttk.Label(settings, text="Bước tối đa / lượt", style="CardMuted.TLabel").grid(row=2, column=1, sticky="w", padx=(10, 0))
 
         self.tolerance_entry = ttk.Entry(settings, textvariable=self.tolerance, width=10)
-        self.tolerance_entry.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.tolerance_entry.grid(row=3, column=0, sticky="ew", pady=(4, 0))
         self.iteration_entry = ttk.Entry(settings, textvariable=self.max_iter, width=10)
-        self.iteration_entry.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(4, 0))
+        self.iteration_entry.grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=(4, 0))
 
         ttk.Checkbutton(parent, text="Áp dụng giới hạn Q tại nút PV", variable=self.enforce_q).pack(anchor="w", pady=4)
 
@@ -671,11 +701,21 @@ class PowerFlowApp(tk.Tk):
         def run():
             try:
                 res = run_n1_contingency_analysis(data, tolerance=tol, max_iterations=max_iter, enforce_q_limits=enforce_q)
-                self.after(0, lambda: self._on_n1_finished(res, None))
+                self.n1_queue.put((res, None))
             except Exception as e:
-                self.after(0, lambda: self._on_n1_finished(None, e))
+                self.n1_queue.put((None, e))
 
         threading.Thread(target=run, daemon=True).start()
+        self._poll_n1()
+
+    def _poll_n1(self):
+        if self._closed:
+            return
+        try:
+            res, err = self.n1_queue.get_nowait()
+            self._on_n1_finished(res, err)
+        except queue.Empty:
+            self.after(50, self._poll_n1)
 
     def _on_n1_finished(self, res, error):
         self.btn_run_n1.configure(state="normal", text="⚡ Chạy phân tích N-1")
@@ -1015,6 +1055,346 @@ class PowerFlowApp(tk.Tk):
 
         self.compare_cards["load_delta"].configure(text=f"{max_delta_load:.1f}%")
 
+    def _build_solvers_benchmark_tab(self):
+        self.benchmark_frame = ttk.Frame(self.tabs, style="Card.TFrame", padding=14)
+        self.tabs.add(self.benchmark_frame, text="⚡ So sánh 4 phương pháp")
+
+        # 1. Top toolbar
+        toolbar = ttk.Frame(self.benchmark_frame, style="Card.TFrame")
+        toolbar.pack(fill="x", pady=(0, 10))
+
+        self.btn_run_benchmark = ttk.Button(
+            toolbar, text="🚀 Chạy so sánh cả 4 phương pháp", command=self.run_solvers_benchmark, style="Primary.TButton"
+        )
+        self.btn_run_benchmark.pack(side="left")
+
+        self.btn_export_benchmark = ttk.Button(
+            toolbar, text="Xuất bảng so sánh CSV...", command=self.export_solvers_benchmark, style="Small.TButton"
+        )
+        self.btn_export_benchmark.pack(side="left", padx=8)
+
+        self.benchmark_status_var = tk.StringVar(value="Sẵn sàng chạy đồng thời cả 4 phương pháp trên dữ liệu hiện tại để so sánh đối chứng.")
+        ttk.Label(toolbar, textvariable=self.benchmark_status_var, style="CardMuted.TLabel").pack(side="right", padx=6)
+
+        # 2. Comparison cards banner: 4 methods summary
+        cards_frame = ttk.Frame(self.benchmark_frame, style="Card.TFrame")
+        cards_frame.pack(fill="x", pady=(0, 10))
+        cards_frame.columnconfigure((0, 1, 2, 3), weight=1)
+
+        self.bench_cards = []
+        method_cards_info = [
+            ("Newton-Raphson (NR)", "#0d9488", "Hội tụ bậc hai (quadratic)\n3-5 bước lặp\nJacobian 2N×2N\nChuẩn công nghiệp"),
+            ("Phân tách nhanh (FDPF)", "#0284c7", "Ma trận B', B'' hằng số\nBỏ qua đạo hàm chéo\nMỗi bước cực nhanh\nLưới truyền tải R ≪ X"),
+            ("Gauss-Seidel (GS)", "#d97706", "Lặp điện áp nút phức\nHội tụ tuyến tính (chậm)\nBộ nhớ tối thiểu O(N)\nGiảng dạy & Lưới nhỏ"),
+            ("Trào lưu một chiều (DC)", "#7c3aed", "Tuyến tính 1 bước P=Bθ\nKhông cần lặp, ko phân kỳ\nBỏ qua R, Q, sụt áp U\nQuy hoạch & Thị trường"),
+        ]
+        for col, (title, color, desc) in enumerate(method_cards_info):
+            card = tk.Frame(cards_frame, bg=SURFACE, padx=10, pady=8, highlightthickness=1, highlightbackground=LINE)
+            card.grid(row=0, column=col, sticky="nsew", padx=4)
+            self.bench_cards.append(card)
+
+            tk.Label(card, text=title, font=("Segoe UI", 10, "bold"), fg=color, bg=SURFACE).pack(anchor="w")
+            tk.Label(card, text=desc, font=("Segoe UI", 8), fg=MUTED, bg=SURFACE, justify="left").pack(anchor="w", pady=(3, 0))
+
+        # 3. KPI Summary Table
+        kpi_title_row = ttk.Frame(self.benchmark_frame, style="Card.TFrame")
+        kpi_title_row.pack(fill="x", pady=(4, 4))
+        ttk.Label(kpi_title_row, text="Bảng đối chiếu hiệu năng 4 phương pháp (KPI Benchmark)", style="Section.TLabel").pack(side="left")
+
+        kpi_frame = ttk.Frame(self.benchmark_frame, style="Card.TFrame")
+        kpi_frame.pack(fill="x", pady=(0, 10))
+        kpi_cols = [
+            ("name", "Phương pháp", 185),
+            ("status", "Trạng thái", 120),
+            ("iterations", "Số bước", 75),
+            ("time_ms", "Thời gian (ms)", 95),
+            ("max_mismatch", "Sai lệch max (pu)", 120),
+            ("max_v_diff", "|ΔU| max vs NR", 115),
+            ("max_ang_diff", "|Δθ| max vs NR", 115),
+            ("p_loss", "Tổn thất P (MW)", 110),
+            ("suitability", "Phạm vi ứng dụng tối ưu", 260)
+        ]
+        self.bench_kpi_table = self.make_table(kpi_frame, kpi_cols)
+        self._configure_table_tags(self.bench_kpi_table)
+        kpi_frame.rowconfigure(0, minsize=140)
+
+        # 4. Detail Notebook: Bus voltages, Branch flows, Theory
+        self.bench_detail_tabs = ttk.Notebook(self.benchmark_frame)
+        self.bench_detail_tabs.pack(fill="both", expand=True)
+
+        # Tab 4.1: Bus Voltages comparison
+        bus_tab = ttk.Frame(self.bench_detail_tabs, style="Card.TFrame", padding=6)
+        self.bench_detail_tabs.add(bus_tab, text="Chi tiết điện áp nút (NR vs FDPF vs GS vs DC)")
+        bus_cols = [
+            ("id", "Nút", 65),
+            ("type", "Loại", 85),
+            ("v_nr", "U NR (pu)", 95),
+            ("ang_nr", "Góc NR (°)", 95),
+            ("v_fdpf", "U FDPF (pu)", 95),
+            ("ang_fdpf", "Góc FDPF (°)", 95),
+            ("v_gs", "U GS (pu)", 95),
+            ("ang_gs", "Góc GS (°)", 95),
+            ("v_dc", "U DC (pu)", 95),
+            ("ang_dc", "Góc DC (°)", 95),
+        ]
+        self.bench_bus_table = self.make_table(bus_tab, bus_cols)
+        self._configure_table_tags(self.bench_bus_table)
+
+        # Tab 4.2: Branch Flows comparison
+        br_tab = ttk.Frame(self.bench_detail_tabs, style="Card.TFrame", padding=6)
+        self.bench_detail_tabs.add(br_tab, text="Chi tiết dòng công suất nhánh P (MW)")
+        br_cols = [
+            ("id", "Nhánh", 75),
+            ("from_to", "Đoạn tuyến", 85),
+            ("p_nr", "P NR (MW)", 100),
+            ("p_fdpf", "P FDPF (MW)", 100),
+            ("p_gs", "P GS (MW)", 100),
+            ("p_dc", "P DC (MW)", 100),
+            ("diff_fdpf", "Δ P FDPF (MW)", 110),
+            ("diff_dc", "Δ P DC (MW)", 110),
+            ("err_dc_pct", "Sai số DC (%)", 100)
+        ]
+        self.bench_branch_table = self.make_table(br_tab, br_cols)
+        self._configure_table_tags(self.bench_branch_table)
+
+        # Tab 4.3: Theory & Comparison text
+        theory_tab = ttk.Frame(self.bench_detail_tabs, style="Card.TFrame", padding=6)
+        self.bench_detail_tabs.add(theory_tab, text="📖 Phân tích lý thuyết & Đánh giá chuyên sâu")
+        self.bench_theory_text = ScrolledText(theory_tab, wrap="word", font=("Consolas", 10), state="disabled",
+                                              background=SURFACE, foreground=INK, borderwidth=0, padx=8, pady=8)
+        self.bench_theory_text.pack(fill="both", expand=True)
+        self._populate_bench_theory()
+
+        self.bench_results_data = None
+
+    def run_solvers_benchmark(self):
+        if not self.validate_input():
+            messagebox.showerror("Dữ liệu không hợp lệ", "Vui lòng sửa các lỗi dữ liệu trước khi so sánh 4 phương pháp.", parent=self)
+            return
+        data = parse_case(self.text())
+        tol, max_iter = self._read_options()
+        enforce_q = self.enforce_q.get()
+
+        self.btn_run_benchmark.configure(state="disabled", text="Đang giải 4 phương pháp…")
+        self.benchmark_status_var.set("Đang chạy đối sánh NR, FDPF, GS và DC Flow...")
+        self.update_idletasks()
+
+        def run():
+            try:
+                res = benchmark_all_solvers(data, tolerance=tol, max_iterations=max_iter, enforce_q_limits=enforce_q)
+                self.bench_queue.put((res, None))
+            except Exception as e:
+                self.bench_queue.put((None, e))
+
+        threading.Thread(target=run, daemon=True).start()
+        self._poll_benchmark()
+
+    def _poll_benchmark(self):
+        if self._closed:
+            return
+        try:
+            res, err = self.bench_queue.get_nowait()
+            self._on_solvers_benchmark_finished(res, err)
+        except queue.Empty:
+            self.after(50, self._poll_benchmark)
+
+    def _on_solvers_benchmark_finished(self, res, error):
+        self.btn_run_benchmark.configure(state="normal", text="🚀 Chạy so sánh cả 4 phương pháp")
+        if error:
+            messagebox.showerror("Lỗi so sánh bộ giải", str(error), parent=self)
+            self.benchmark_status_var.set(f"Lỗi: {error}")
+            return
+
+        self.bench_results_data = res
+        self.benchmark_status_var.set(f"Hoàn thành so sánh 4 phương pháp cho lưới '{res.get('case_name')}'!")
+
+        # 1. KPI table
+        self.bench_kpi_table.delete(*self.bench_kpi_table.get_children())
+        for i, row in enumerate(res.get("kpi_summary", [])):
+            tag = "even" if i % 2 == 0 else "odd"
+            if row.get("converged"):
+                if row.get("code") == "NR":
+                    tag = "slack"
+                elif row.get("code") == "FDPF":
+                    tag = "pv"
+            else:
+                tag = "critical"
+
+            mis_str = f"{row['max_mismatch_pu']:.2e}" if row.get("max_mismatch_pu") is not None else "—"
+            v_diff_str = f"{row['max_v_diff_pu']:.5f}" if row.get("max_v_diff_pu") is not None else "—"
+            a_diff_str = f"{row['max_ang_diff_deg']:.3f}°" if row.get("max_ang_diff_deg") is not None else "—"
+            loss_str = f"{row['p_loss_mw']:.3f}" if row.get("p_loss_mw") is not None else "—"
+
+            vals = [
+                row.get("name", ""),
+                row.get("status", ""),
+                str(row.get("iterations", 0)),
+                f"{row.get('time_ms', 0.0):.2f}",
+                mis_str,
+                v_diff_str,
+                a_diff_str,
+                loss_str,
+                row.get("suitability", "")
+            ]
+            self.bench_kpi_table.insert("", "end", values=vals, tags=(tag,))
+
+        # 2. Bus comparison table
+        self.bench_bus_table.delete(*self.bench_bus_table.get_children())
+        for i, b in enumerate(res.get("bus_comparison", [])):
+            tag = "even" if i % 2 == 0 else "odd"
+            vals = [
+                b.get("id"),
+                b.get("type"),
+                b.get("v_nr"),
+                b.get("ang_nr"),
+                b.get("v_fdpf"),
+                b.get("ang_fdpf"),
+                b.get("v_gs"),
+                b.get("ang_gs"),
+                b.get("v_dc"),
+                b.get("ang_dc"),
+            ]
+            self.bench_bus_table.insert("", "end", values=vals, tags=(tag,))
+
+        # 3. Branch comparison table
+        self.bench_branch_table.delete(*self.bench_branch_table.get_children())
+        for j, br in enumerate(res.get("branch_comparison", [])):
+            tag = "even" if j % 2 == 0 else "odd"
+            p_nr = br.get("p_nr")
+            p_fdpf = br.get("p_fdpf")
+            p_dc = br.get("p_dc")
+
+            diff_fdpf = round(p_fdpf - p_nr, 2) if isinstance(p_fdpf, (int, float)) and isinstance(p_nr, (int, float)) else "—"
+            diff_dc = round(p_dc - p_nr, 2) if isinstance(p_dc, (int, float)) and isinstance(p_nr, (int, float)) else "—"
+            err_dc_pct = f"{(abs(p_dc - p_nr) / max(abs(p_nr), 1.0) * 100.0):.1f}%" if isinstance(p_dc, (int, float)) and isinstance(p_nr, (int, float)) else "—"
+
+            vals = [
+                br.get("id"),
+                br.get("from_to"),
+                p_nr,
+                p_fdpf,
+                br.get("p_gs"),
+                p_dc,
+                diff_fdpf,
+                diff_dc,
+                err_dc_pct
+            ]
+            self.bench_branch_table.insert("", "end", values=vals, tags=(tag,))
+
+    def _populate_bench_theory(self):
+        text = """================================================================================
+SO SÁNH BỐN PHƯƠNG PHÁP TÍNH TOÁN TRÀO LƯU CÔNG SUẤT PHỔ BIẾN
+================================================================================
+
+1. PHƯƠNG PHÁP NEWTON-RAPHSON (NR)
+--------------------------------------------------------------------------------
+- Bản chất toán học: Giải hệ phương trình phi tuyến AC bằng khai triển chuỗi Taylor bậc nhất,
+  bỏ qua các đạo hàm bậc cao. Mỗi bước lặp giải hệ phương trình tuyến tính:
+      [ ΔP ]   [ H   N ] [ Δθ ]
+      [ ΔQ ] = [ M   L ] [ ΔV/V ]
+  với ma trận Jacobian kích thước (2N x 2N).
+- Điểm mạnh:
+  + Tốc độ hội tụ bậc hai (quadratic): số chữ số có nghĩa tăng gấp đôi sau mỗi bước.
+  + Số bước lặp độc lập với kích thước hệ thống (thường chỉ 3-5 bước là hội tụ).
+  + Rất ổn định với lưới phức tạp, nhiều giới hạn Q, máy biến áp điều chỉnh nấc.
+- Điểm yếu:
+  + Khối lượng tính toán mỗi bước lớn do phải liên tục cập nhật và nghịch đảo Jacobian O(N^3).
+  + Ma trận có thể suy biến nếu điểm khởi tạo quá xa hoặc lưới chịu tải cực hạn.
+- Phạm vi ứng dụng: Tiêu chuẩn công nghiệp cho thiết kế, quy hoạch, vận hành thời gian thực (EMS/SCADA).
+
+2. PHƯƠNG PHÁP PHÂN TÁCH NHANH (FAST DECOUPLED POWER FLOW - FDPF)
+--------------------------------------------------------------------------------
+- Bản chất toán học: Dựa trên đặc tính vật lý lưới truyền tải (X >> R):
+  + Công suất tác dụng P chủ yếu phụ thuộc góc pha θ (bỏ qua N = 0).
+  + Công suất phản kháng Q chủ yếu phụ thuộc biên độ điện áp V (bỏ qua M = 0).
+  + Giả định V ≈ 1.0 p.u. và cos(θij) ≈ 1, thu về 2 phương trình độc lập:
+      ΔP / V = B' · Δθ
+      ΔQ / V = B'' · ΔV
+- Điểm mạnh:
+  + Hai ma trận B' và B'' là hằng số đối xứng, chỉ cần phân tích LU một lần duy nhất lúc đầu!
+  + Tốc độ mỗi bước lặp nhanh gấp 4-5 lần so với NR.
+  + Tiết kiệm bộ nhớ RAM đáng kể.
+- Điểm yếu:
+  + Mất tính chất hội tụ bậc hai (thường cần 6-10 bước lặp).
+  + Kém hội tụ hoặc phân kỳ trên lưới phân phối có tỷ số R/X cao.
+- Phạm vi ứng dụng: Phân tích sự cố N-1 (Contingency Analysis), giám sát an ninh động lưới truyền tải.
+
+3. PHƯƠNG PHÁP GAUSS-SEIDEL (GS)
+--------------------------------------------------------------------------------
+- Bản chất toán học: Lặp điểm bất động trên phương trình điện áp nút:
+      V_i^(k+1) = (1 / Y_ii) * [ (P_i - j Q_i) / conj(V_i) - Σ (Y_ij * V_j) ]
+  Sử dụng ngay giá trị điện áp vừa tính của nút trước để cập nhật nút sau (Successive Displacement).
+- Điểm mạnh:
+  + Thuật toán cực kỳ đơn giản, không cần xây dựng hay đảo ma trận Jacobian.
+  + Tiêu tốn bộ nhớ ít nhất (chỉ cần lưu mảng Ybus và vector V).
+- Điểm yếu:
+  + Hội tụ tuyến tính (rất chậm), số bước lặp tăng vọt theo kích thước số nút lưới (vài chục đến hàng trăm bước).
+  + Rất nhạy cảm với topology: dễ phân kỳ nếu có nhánh bù nối tiếp hoặc lưới hình tia dài.
+- Phạm vi ứng dụng: Mục đích giảng dạy, minh họa thuật toán, lưới điện quy mô rất nhỏ.
+
+4. PHƯƠNG PHÁP TRÀO LƯU CÔNG SUẤT MỘT CHIỀU (DC POWER FLOW)
+--------------------------------------------------------------------------------
+- Bản chất toán học: Tuyến tính hóa hoàn toàn hệ phương trình trào lưu công suất:
+  + Bỏ qua điện trở R = 0 (thuần kháng).
+  + Giả định điện áp tại mọi nút bằng đúng 1.0 p.u. (V_i = 1.0).
+  + Góc lệch pha giữa các nút rất nhỏ (sin θ_ij ≈ θ_ij, cos θ_ij ≈ 1).
+  + Hệ phương trình quy về:
+      P_bus = B_bus · θ
+- Điểm mạnh:
+  + Giải hệ phương trình đại số tuyến tính ĐÚNG 1 LẦN (Non-iterative).
+  + Luôn luôn tìm được nghiệm duy nhất, 100% không bao giờ phân kỳ!
+  + Tốc độ tính toán siêu nhanh.
+- Điểm yếu:
+  + Hoàn toàn không tính được công suất phản kháng Q và sụt áp U.
+  + Sai số công suất tác dụng P thường từ 5% đến 10% so với trào lưu xoay chiều AC.
+- Phạm vi ứng dụng: Bài toán thị trường điện (LMP), tối ưu hóa chi phí phát điện (OPF),
+  quy hoạch dài hạn, sàng lọc nhanh sự cố trước khi chạy kiểm tra chi tiết bằng AC.
+================================================================================
+"""
+        self.bench_theory_text.configure(state="normal")
+        self.bench_theory_text.delete("1.0", "end")
+        self.bench_theory_text.insert("1.0", text.strip())
+        self.bench_theory_text.configure(state="disabled")
+
+    def export_solvers_benchmark(self):
+        if not self.bench_results_data:
+            messagebox.showinfo("Xuất kết quả", "Chưa có kết quả so sánh để xuất. Hãy bấm 'Chạy so sánh cả 4 phương pháp' trước.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Xuất bảng so sánh 4 phương pháp trào lưu công suất",
+            defaultextension=".csv",
+            filetypes=[("Bảng tính CSV", "*.csv"), ("Tất cả", "*.*")]
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow([f"# BẢNG SO SÁNH 4 PHƯƠNG PHÁP TRÀO LƯU CÔNG SUẤT: {self.bench_results_data.get('case_name', '')}"])
+                writer.writerow([])
+                writer.writerow(["=== 1. TỔNG HỢP HIỆU NĂNG VÀ HỘI TỤ (KPI) ==="])
+                writer.writerow(["Phương pháp", "Trạng thái", "Số bước lặp", "Thời gian (ms)", "Sai lệch max (pu)", "|ΔU| max vs NR (pu)", "|Δθ| max vs NR (°)", "Tổn thất P (MW)", "Ứng dụng"])
+                for row in self.bench_results_data.get("kpi_summary", []):
+                    writer.writerow([
+                        row.get("name"), row.get("status"), row.get("iterations"), row.get("time_ms"),
+                        row.get("max_mismatch_pu"), row.get("max_v_diff_pu"), row.get("max_ang_diff_deg"),
+                        row.get("p_loss_mw"), row.get("suitability")
+                    ])
+                writer.writerow([])
+                writer.writerow(["=== 2. SO SÁNH ĐIỆN ÁP VÀ GÓC PHA TẠI CÁC NÚT ==="])
+                writer.writerow(["Nút", "Loại", "U NR (pu)", "Góc NR (°)", "U FDPF (pu)", "Góc FDPF (°)", "U GS (pu)", "Góc GS (°)", "U DC (pu)", "Góc DC (°)"])
+                for b in self.bench_results_data.get("bus_comparison", []):
+                    writer.writerow([b.get("id"), b.get("type"), b.get("v_nr"), b.get("ang_nr"), b.get("v_fdpf"), b.get("ang_fdpf"), b.get("v_gs"), b.get("ang_gs"), b.get("v_dc"), b.get("ang_dc")])
+                writer.writerow([])
+                writer.writerow(["=== 3. SO SÁNH DÒNG CÔNG SUẤT TÁC DỤNG TRÊN CÁC NHÁNH P (MW) ==="])
+                writer.writerow(["Nhánh", "Đoạn tuyến", "P NR (MW)", "P FDPF (MW)", "P GS (MW)", "P DC (MW)"])
+                for br in self.bench_results_data.get("branch_comparison", []):
+                    writer.writerow([br.get("id"), br.get("from_to"), br.get("p_nr"), br.get("p_fdpf"), br.get("p_gs"), br.get("p_dc")])
+            messagebox.showinfo("Thành công", f"Đã xuất bảng so sánh 4 phương pháp ra:\n{path}", parent=self)
+        except Exception as e:
+            messagebox.showerror("Lỗi xuất tệp", str(e), parent=self)
+
     def _build_footer(self):
         footer = ttk.Frame(self, padding=(18, 10))
         footer.pack(side="bottom", fill="x")
@@ -1048,7 +1428,7 @@ class PowerFlowApp(tk.Tk):
         return self.editor.get("1.0", "end-1c")
 
     def signature(self):
-        return (self.text(), self.tolerance.get(), self.max_iter.get(), self.enforce_q.get())
+        return (self.text(), self.tolerance.get(), self.max_iter.get(), self.enforce_q.get(), self.solver_method.get())
 
     def _set_state(self, text, tone="idle"):
         self._current_tone = tone
@@ -1100,6 +1480,11 @@ class PowerFlowApp(tk.Tk):
             self.diagram.clear()
         if hasattr(self, "update_comparison"):
             self.update_comparison()
+        if hasattr(self, "bench_kpi_table"):
+            self.bench_kpi_table.delete(*self.bench_kpi_table.get_children())
+            self.bench_bus_table.delete(*self.bench_bus_table.get_children())
+            self.bench_branch_table.delete(*self.bench_branch_table.get_children())
+            self.benchmark_status_var.set("Dữ liệu đã đổi · Bấm 'Chạy so sánh cả 4 phương pháp' để cập nhật.")
         self.set_report("Chưa có báo cáo cho dữ liệu hiện tại.\n\n1. Mở tệp JSON/Excel hoặc chọn lưới mẫu.\n2. Kiểm tra dữ liệu và thiết lập bộ giải.\n3. Bấm Tính toán trào lưu (F5).\n\nKhi hội tụ, bạn có thể xem và xuất báo cáo tại đây.")
         self._set_state("ĐANG TÍNH" if self.is_running else "CHỜ TÍNH TOÁN", "busy" if self.is_running else "idle")
         self.status.set("Dữ liệu đã đổi — cần tính lại" if not self.is_running else "Đang giải; thay đổi đầu vào sẽ cần tính lại")
@@ -1335,14 +1720,18 @@ class PowerFlowApp(tk.Tk):
         self.run_button.configure(state="disabled", text="Đang tính toán…")
         self.progress.start(12)
         self._set_state("ĐANG TÍNH", "busy")
-        self.status.set("Đang giải bằng Newton–Raphson…")
-        self.dashboard.clear("Đang tính toán trào lưu…\nKết quả sẽ hiển thị khi bộ giải hội tụ.")
+
+        method_label = self.solver_method.get()
+        method_code = dict(SOLVER_METHODS).get(method_label, "NR")
+        self.status.set(f"Đang giải bằng {method_label}…")
+        self.dashboard.clear(f"Đang tính toán bằng {method_label}…\nKết quả sẽ hiển thị khi bộ giải hoàn tất.")
         self.tabs.select(self.dashboard)
         self._calc_start_time = time.perf_counter()
 
         def run():
             try:
-                result = solve_power_flow(data, tolerance=tol, max_iterations=max_iter, enforce_q_limits=snapshot[3])
+                result = solve_power_flow(data, tolerance=tol, max_iterations=max_iter,
+                                          enforce_q_limits=snapshot[3], method=method_code)
                 self.worker_queue.put((snapshot, result, None))
             except Exception as exc:
                 self.worker_queue.put((snapshot, None, exc))
@@ -1396,7 +1785,10 @@ class PowerFlowApp(tk.Tk):
 
         warnings = len(result["warnings"])
         self._set_state("HỘI TỤ · CẢNH BÁO" if warnings else "ĐÃ HỘI TỤ", "warning" if warnings else "success")
-        self.status.set(f"{elapsed_ms:.1f} ms · {result['iterations']} bước · Sai lệch {result['max_mismatch_pu']:.2e} p.u. · {warnings} cảnh báo")
+        method_name = result.get("solver_method", "Newton-Raphson")
+        mis_val = result.get("max_mismatch_pu")
+        mis_txt = f"{mis_val:.2e} p.u." if mis_val is not None else "0.0 p.u. (DC)"
+        self.status.set(f"[{method_name}] {elapsed_ms:.1f} ms · {result['iterations']} bước · Sai lệch {mis_txt} · {warnings} cảnh báo")
 
     @staticmethod
     def format_value(value):

@@ -231,6 +231,56 @@ class UiUpgradeTests(unittest.TestCase):
         failed = diagram.locate_bus("9999")
         self.assertFalse(failed)
 
+    def test_solver_selection_and_execution(self):
+        """Kiểm tra chọn phương pháp giải trên giao diện và tính toán."""
+        # 1. Giải bằng FDPF
+        self.app.solver_method.set("Phân tách nhanh (FDPF)")
+        self.pump()
+        res_fdpf = self.calculate()
+        self.assertIn("FDPF", res_fdpf.get("solver_method", ""))
+
+        # 2. Giải bằng DC Flow
+        self.app.solver_method.set("Trào lưu một chiều (DC Flow)")
+        self.pump()
+        res_dc = self.calculate()
+        self.assertIn("DC", res_dc.get("solver_method", ""))
+
+        # 3. Trả về Newton-Raphson
+        self.app.solver_method.set("Newton–Raphson (Chuẩn CN)")
+        self.pump()
+        res_nr = self.calculate()
+        self.assertIn("Newton-Raphson", res_nr.get("solver_method", ""))
+
+    def test_solvers_benchmark_tab_execution_and_export(self):
+        """Kiểm tra tab đối chiếu 4 phương pháp và xuất kết quả."""
+        self.app.run_solvers_benchmark()
+        self.wait_until(lambda: self.app.btn_run_benchmark["text"] == "🚀 Chạy so sánh cả 4 phương pháp")
+
+        # Kiểm tra bảng KPI có đủ 4 phương pháp
+        kpi_items = self.app.bench_kpi_table.get_children()
+        self.assertEqual(len(kpi_items), 4)
+
+        # Kiểm tra bảng nút và bảng nhánh
+        bus_items = self.app.bench_bus_table.get_children()
+        self.assertEqual(len(bus_items), 3)
+
+        branch_items = self.app.bench_branch_table.get_children()
+        self.assertEqual(len(branch_items), 3)
+
+        # Kiểm tra xuất file CSV
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            with patch("gui.filedialog.asksaveasfilename", return_value=tmp_path):
+                self.app.export_solvers_benchmark()
+            content = Path(tmp_path).read_text(encoding="utf-8-sig")
+            self.assertIn("Newton-Raphson", content)
+            self.assertIn("FDPF", content)
+            self.assertIn("Gauss-Seidel", content)
+            self.assertIn("DC", content)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()

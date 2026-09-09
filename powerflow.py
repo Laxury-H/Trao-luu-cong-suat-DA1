@@ -296,14 +296,16 @@ def _newton(ybus, specified, kinds, vm, va, tolerance, max_iterations, pass_no, 
             raise PowerFlowError(f"Không tìm được bước giảm sai lệch ở lượt {pass_no}, bước {iteration}; sai lệch {error:.3e} p.u.", history)
 
 
-def solve_power_flow(data: dict, *, tolerance: float = 1e-8,
+def solve_power_flow(data: dict, *, method: str = "NR", tolerance: float = 1e-8,
                      max_iterations: int = 50, enforce_q_limits: bool = True,
                      q_limit_tolerance_mvar: float = 1e-5) -> dict:
     """Trả về kết quả JSON-serializable; chỉ trả kết quả khi đã hội tụ.
 
-    Giới hạn Q áp dụng cho máy phát tương đương tại nút PV. Mỗi lượt chuyển
-    nút vi phạm lớn nhất thành PQ; không phục hồi PV trong cùng lần giải.
-    SLACK giữ vai trò cân bằng; giới hạn P/Q của SLACK chỉ được cảnh báo.
+    Hỗ trợ 4 phương pháp tính toán trào lưu công suất:
+    - "NR" / "Newton": Newton-Raphson (chuẩn công nghiệp)
+    - "FDPF" / "Fast_Decoupled": Phân tách nhanh Stott-Alsac (XB)
+    - "GS" / "Gauss_Seidel": Gauss-Seidel lặp điện áp phức
+    - "DC" / "DCPF": Trào lưu một chiều tuyến tính hóa
     """
     tolerance = _number(tolerance, "tolerance")
     q_limit_tolerance_mvar = _number(q_limit_tolerance_mvar, "q_limit_tolerance_mvar")
@@ -313,6 +315,32 @@ def solve_power_flow(data: dict, *, tolerance: float = 1e-8,
         raise CaseError("max_iterations phải là số nguyên >= 1.")
     if not isinstance(enforce_q_limits, bool):
         raise CaseError("enforce_q_limits phải là bool.")
+
+    method_key = str(method).strip().upper()
+    if method_key in ("FDPF", "FAST_DECOUPLED", "FAST DECOUPLED"):
+        from solvers import solve_fdpf_engine
+        network = validate_case(data)
+        ybus, primitives = build_ybus(network)
+        return solve_fdpf_engine(network, ybus, primitives, tolerance=tolerance,
+                                 max_iterations=max_iterations, enforce_q_limits=enforce_q_limits,
+                                 q_limit_tolerance_mvar=q_limit_tolerance_mvar)
+    elif method_key in ("GS", "GAUSS_SEIDEL", "GAUSS-SEIDEL", "GAUSS"):
+        from solvers import solve_gauss_seidel_engine
+        network = validate_case(data)
+        ybus, primitives = build_ybus(network)
+        return solve_gauss_seidel_engine(network, ybus, primitives, tolerance=tolerance,
+                                         max_iterations=max_iterations, enforce_q_limits=enforce_q_limits,
+                                         q_limit_tolerance_mvar=q_limit_tolerance_mvar)
+    elif method_key in ("DC", "DCPF", "DC_FLOW", "DC POWER FLOW"):
+        from solvers import solve_dc_engine
+        network = validate_case(data)
+        _, primitives = build_ybus(network)
+        return solve_dc_engine(network, primitives)
+    elif method_key in ("NR", "NEWTON", "NEWTON_RAPHSON", "NEWTON-RAPHSON"):
+        pass
+    else:
+        raise CaseError(f"Phương pháp trào lưu công suất không hợp lệ: '{method}'. Hỗ trợ: 'NR', 'FDPF', 'GS', 'DC'.")
+
     network = validate_case(data)
     ybus, primitives = build_ybus(network)
     buses, base = network.buses, network.base_mva
@@ -346,9 +374,11 @@ def solve_power_flow(data: dict, *, tolerance: float = 1e-8,
                          "q_before_mvar": q_before, "q_fixed_mvar": limit})
     else:
         raise PowerFlowError("Không hoàn tất vòng xử lý giới hạn Q.", history)
-    return _results(network, ybus, primitives, vm, va, kinds, specified, error,
-                    total_iterations, pass_no, history, switches, tolerance,
-                    enforce_q_limits, q_limit_tolerance_mvar)
+    res = _results(network, ybus, primitives, vm, va, kinds, specified, error,
+                   total_iterations, pass_no, history, switches, tolerance,
+                   enforce_q_limits, q_limit_tolerance_mvar)
+    res["solver_method"] = "Newton-Raphson (NR)"
+    return res
 
 
 def _results(network, ybus, primitives, vm, va, kinds, specified, error,
@@ -477,8 +507,10 @@ def format_report(result: dict) -> str:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Tính trào lưu công suất AC cân bằng bằng Newton–Raphson.")
+    parser = argparse.ArgumentParser(description="Tính trào lưu công suất AC cân bằng bằng 4 phương pháp (NR, FDPF, GS, DC).")
     parser.add_argument("case", nargs="?", type=Path, default=Path(__file__).parent / "examples" / "luoi_3_nut.json", help="Tệp dữ liệu JSON; mặc định ví dụ 3 nút.")
+    parser.add_argument("--method", choices=["nr", "fdpf", "gs", "dc"], default="nr", help="Phương pháp giải: nr (Newton-Raphson), fdpf (Fast Decoupled), gs (Gauss-Seidel), dc (DC Flow). Mặc định 'nr'.")
+    parser.add_argument("--benchmark", action="store_true", help="Chạy đối chuẩn cả 4 phương pháp trên tệp lưới và in bảng so sánh.")
     parser.add_argument("--tol", type=float, default=1e-8, help="Dung sai sai lệch công suất p.u. (mặc định 1e-8).")
     parser.add_argument("--max-iter", type=int, default=50, help="Số bước tối đa mỗi lượt giải.")
     parser.add_argument("--no-q-limits", action="store_true", help="Tắt chuyển PV sang PQ theo giới hạn Q.")
@@ -490,11 +522,25 @@ def main(argv=None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
     try:
+        if args.benchmark:
+            from solvers import benchmark_all_solvers
+            bench = benchmark_all_solvers(load_case(args.case), tolerance=args.tol, max_iterations=args.max_iter,
+                                          enforce_q_limits=not args.no_q_limits)
+            print(f"\n=== SO SÁNH ĐỐI CHUẨN 4 PHƯƠNG PHÁP TRÀO LƯU: {bench['case_name']} ===")
+            print(f"{'Phương pháp':<25} {'Trạng thái':<14} {'Số bước':<9} {'Thời gian':<12} {'Max |ΔP| (pu)':<16} {'ΔPloss (MW)':<12}")
+            print("-" * 90)
+            for kpi in bench["kpi_summary"]:
+                mis_str = f"{kpi['max_mismatch_pu']:.2e}" if kpi['max_mismatch_pu'] is not None else "—"
+                loss_str = f"{kpi['p_loss_mw']:.3f}" if kpi['p_loss_mw'] is not None else "—"
+                print(f"{kpi['name']:<25} {kpi['status']:<14} {kpi['iterations']:<9} {kpi['time_ms']:>6.2f} ms   {mis_str:<16} {loss_str:<12}")
+            print()
+            return 0
+
         outputs = [path for path in (args.output, args.report) if path is not None]
         resolved = [path.resolve() for path in outputs]
         if args.case.resolve() in resolved or len(set(resolved)) != len(resolved):
             raise CaseError("Tệp đầu vào, kết quả JSON và báo cáo phải có đường dẫn khác nhau.")
-        result = solve_power_flow(load_case(args.case), tolerance=args.tol, max_iterations=args.max_iter,
+        result = solve_power_flow(load_case(args.case), method=args.method.upper(), tolerance=args.tol, max_iterations=args.max_iter,
                                   enforce_q_limits=not args.no_q_limits)
         report = format_report(result)
         print(report, end="")
