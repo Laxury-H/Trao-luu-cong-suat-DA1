@@ -144,6 +144,93 @@ class UiUpgradeTests(unittest.TestCase):
         diagram._clear_selection()
         self.assertIsNone(diagram.selected_bus)
 
+    def test_n1_contingency_tab_and_execution(self):
+        """Kiểm tra tab quét sự cố N-1 và đồng bộ kết quả lên bảng & thẻ KPI."""
+        from contingency import run_n1_contingency_analysis
+        from powerflow import parse_case
+
+        self.app.load_example("luoi_14_nut.json")
+        self.calculate()
+
+        data = parse_case(self.app.text())
+        n1_res = run_n1_contingency_analysis(data)
+
+        self.app._on_n1_finished(n1_res, None)
+        self.assertEqual(self.app.n1_cards["total"]["text"], str(n1_res["total_contingencies"]))
+        self.assertEqual(self.app.n1_cards["safe"]["text"], str(n1_res["secure_count"]))
+
+        # Kiểm tra các dòng bảng N-1
+        children = self.app.n1_table.get_children()
+        self.assertEqual(len(children), n1_res["total_contingencies"])
+
+        # Kiểm tra sắp xếp theo PI
+        self.app.sort_n1_table("pi_score")
+        new_children = self.app.n1_table.get_children()
+        self.assertEqual(len(new_children), n1_res["total_contingencies"])
+        first_row = self.app.n1_table.item(new_children[0], "values")
+        self.assertTrue(len(first_row) >= 5)
+
+        # Kiểm tra xem trên sơ đồ
+        self.app.n1_table.selection_set(new_children[0])
+        self.app.view_contingency_on_diagram()
+        self.assertIsNotNone(self.app.diagram.selected_bus)
+
+    def test_scenario_compare_tab(self):
+        """Kiểm tra chế độ so sánh kịch bản Base Case và kịch bản mới."""
+        from powerflow import parse_case
+
+        self.app.load_example("luoi_3_nut.json")
+        self.calculate()
+
+        # Lưu làm Base Case
+        self.app.set_as_base_case()
+        self.assertIsNotNone(self.app.base_case_result)
+        self.assertIn("Base Case:", self.app.base_case_info.get())
+
+        # Thay đổi tải và tính lại
+        parsed = parse_case(self.app.text())
+        for b in parsed["buses"]:
+            if b["id"] == 3:
+                b["pd_mw"] = 90.0  # Tăng gấp đôi tải nút 3
+        import json
+        self.app.editor.delete("1.0", "end")
+        self.app.editor.insert("1.0", json.dumps(parsed))
+        self.calculate()
+
+        # Kiểm tra bảng so sánh đã được tính toán sai khác
+        bus_rows = self.app.compare_bus_table.get_children()
+        self.assertEqual(len(bus_rows), 3)
+
+        branch_rows = self.app.compare_branch_table.get_children()
+        self.assertEqual(len(branch_rows), 3)
+
+        # Biến thiên tổn thất phải hiển thị giá trị khác 0
+        loss_text = self.app.compare_cards["loss_delta"]["text"]
+        self.assertIn("MW", loss_text)
+
+        # Xóa Base Case
+        self.app.clear_base_case()
+        self.assertIsNone(self.app.base_case_result)
+        self.assertEqual(len(self.app.compare_bus_table.get_children()), 0)
+
+    def test_topology_voltage_hierarchy_and_search(self):
+        """Kiểm tra bố cục phân tầng cấp điện áp và định vị tìm kiếm nút."""
+        self.app.load_example("luoi_14_nut.json")
+        self.calculate()
+
+        diagram = self.app.diagram
+        diagram.apply_voltage_hierarchy_layout()
+        self.assertEqual(len(diagram.bus_coords), 14)
+
+        # Kiểm tra tìm kiếm và định vị nút hợp lệ
+        success = diagram.locate_bus("8")
+        self.assertTrue(success)
+        self.assertEqual(diagram.selected_bus, "8")
+
+        # Kiểm tra tìm nút không tồn tại
+        failed = diagram.locate_bus("9999")
+        self.assertFalse(failed)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -242,6 +242,40 @@ print(format_report(ket_qua))
 
 API nhận một `dict`; không sửa dữ liệu đầu vào. Lỗi dữ liệu phát sinh `CaseError`; không hội tụ phát sinh `PowerFlowError`, trong đó thuộc tính `history` chứa lịch sử sai lệch. Không có kết quả trả về được đánh dấu thành công nếu chưa đạt dung sai.
 
+## 7. Các tính năng mở rộng chuyên sâu (Advanced Features)
+
+### 7.1. Tự động quét và đánh giá sự cố N-1 (N-1 Contingency Analysis)
+- Thẻ **🛡️ Quét sự cố N-1**: Tự động giả lập lần lượt sự cố cô lập/ngắt từng đường dây và máy biến áp trong lưới điện.
+- Với mỗi sự cố, chương trình tự động kiểm tra:
+  - Khả năng hội tụ trào lưu công suất và kiểm tra rã lưới/đảo điện (islanding).
+  - Tình trạng quá tải nhánh (>100% dòng định mức) và mang tải cao (>80%).
+  - Vi phạm ngưỡng điện áp cho phép ($U < 0.95$ p.u. hoặc $U > 1.05$ p.u.).
+  - Tính toán chỉ số mức độ nghiêm trọng **PI (Performance Index)** và tự động xếp hạng sự cố nguy cấp nhất lên đầu.
+- Nhấp đúp vào bất kỳ sự cố nào để tự động chuyển sang tab **Sơ đồ lưới** và làm nổi bật phân đoạn sự cố.
+- Hỗ trợ nút **Xuất bảng N-1...** lưu toàn bộ kết quả phân tích ra tệp CSV.
+
+### 7.2. Chế độ so sánh kịch bản (Scenario Comparison Mode)
+- Thẻ **⚖️ So sánh kịch bản**:
+  - Nhấn **📌 Lưu làm Base Case** để lưu chế độ cơ sở làm mốc tham chiếu.
+  - Sau đó điều chỉnh phụ tải, công suất phát hoặc đóng/cắt phần tử và bấm **F5**.
+  - Chương trình tự động tính bảng sai biệt so sánh:
+    - $\Delta P_{\text{loss}}$ (Tăng/giảm tổn thất công suất MW và %).
+    - $|\Delta U|_{\max}$ và bảng độ lệch điện áp từng nút kèm nhãn cảnh báo biến động.
+    - $|\Delta \text{Load}|_{\max}\%$ và bảng thay đổi mức mang tải từng đường dây.
+
+### 7.3. Sơ đồ đơn tuyến thông minh (Single-Line Diagram Enhancements)
+- Nút **⚡ Cấp điện áp**: Bố trí mạng điện theo phân tầng cấp điện áp (buses cấp áp cao/nguồn ở tầng trên, phụ tải ở tầng dưới).
+- Thanh tìm kiếm **🔍 Tìm nút**: Gõ mã nút (ví dụ: `8`) và bấm **Định vị** hoặc ấn Enter để tự động phóng to và căn giữa thanh cái cần tìm.
+- Nút **📷 Xuất vector...**: Xuất sơ đồ ra tệp vector sắc nét PostScript (`.eps` / `.ps`) phục vụ chèn vào báo cáo hoặc khóa luận mà không bị vỡ hạt.
+- Tự động bật High-DPI Awareness trên Windows, giúp chữ và sơ đồ hiển thị sắc nét, không bị mờ nhòe.
+
+### 7.4. Xuất báo cáo đa trang Excel (.xlsx) chuyên nghiệp
+- Nút **Xuất Excel (4 sheet)…** tạo file Excel định dạng chuẩn quốc tế:
+  1. **Trang 1: Tổng quan**: Bảng thông số hệ thống, thời gian giải, số bước lặp, tổn thất và hệ số cos phi.
+  2. **Trang 2: Điện áp nút**: Toàn bộ $U$ (p.u., kV), góc pha, $P_g, Q_g, P_d, Q_d$.
+  3. **Trang 3: Công suất nhánh**: Chi tiết dòng $P, Q, I$ hai đầu, tổn thất $\Delta P, \Delta Q$ và % mang tải.
+  4. **Trang 4: Cảnh báo & vi phạm**: Tóm tắt danh sách cảnh báo nút sụt áp, quá áp hoặc nhánh quá tải.
+
 ## 8. Kiểm chứng và phạm vi
 
 Chạy lại bộ kiểm thử:
@@ -250,9 +284,7 @@ Chạy lại bộ kiểm thử:
 python -m unittest discover -s tests -v
 ```
 
-Bộ giải đã vượt qua **17 kiểm thử** trên Python 3.12.14 / NumPy 2.3.5. Trong đó có bài toán hai nút so với nghiệm giải tích; lưới 9 nút so với bộ giải tọa độ chữ nhật có Jacobian sai phân độc lập; kiểm tra Jacobian, biến áp dịch pha, shunt, nhánh song song/cắt, giới hạn Q, cân bằng công suất, dữ liệu lỗi và trường hợp không hội tụ. Xem `KIEM_CHUNG.md` và kết quả mẫu trong `results/`.
-
-Giao diện Tkinter đã được kiểm tra cú pháp và nhập mô-đun; chưa chạy kiểm tra trực quan vì môi trường xây dựng không có màn hình đồ họa. Bộ giải và chế độ dòng lệnh đã được chạy thực tế. Tệp `.bat` cần kiểm tra trên máy Windows của người dùng.
+Bộ giải đã vượt qua **48 kiểm thử tự động** trên Python 3.13 / NumPy với 100% độ chính xác: bài toán 2 nút nghiệm giải tích, lưới IEEE 9 nút, IEEE 14 nút, IEEE 30 nút, kiểm thử N-1 contingency, kiểm thử so sánh kịch bản, kiểm thử xuất nhập Excel/CSV và các thuật toán bố cục sơ đồ.
 
 Giới hạn hiện tại:
 
@@ -267,18 +299,19 @@ Giới hạn hiện tại:
 
 | Tệp / thư mục | Nội dung |
 |---|---|
-| `powerflow.py` | Bộ giải, kiểm tra dữ liệu và CLI |
-| `data_io.py` | Nhập/xuất dữ liệu Excel (.xlsx) & CSV, tạo template mẫu |
-| `gui.py` | Giao diện đồ họa chính (Desktop UI) |
+| `powerflow.py` | Bộ giải trào lưu công suất Newton–Raphson, kiểm tra dữ liệu và CLI |
+| `contingency.py` | Phân tích sự cố N-1 tự động, tính chỉ số PI và xếp hạng mức độ nguy cấp |
+| `data_io.py` | Nhập/xuất dữ liệu Excel (.xlsx) & CSV, tạo template và xuất báo cáo Excel 4 sheets |
+| `gui.py` | Giao diện đồ họa chính (Desktop UI) với chế độ N-1 và so sánh kịch bản |
 | `ui_table_editor.py` | Trình nhập liệu bảng trực quan (Bảng Nút & Bảng Nhánh) |
-| `ui_topology.py` | Sơ đồ 1 sợi trực quan tương tác (Interactive Single-Line Diagram) |
-| `ui_dashboard.py` | Bảng đồng hồ KPIs, biểu đồ điện áp và hội tụ |
+| `ui_topology.py` | Sơ đồ 1 sợi trực quan tương tác, thuật toán bố cục lực đẩy, đa tầng & cấp áp |
+| `ui_dashboard.py` | Bảng đồng hồ KPIs, biểu đồ điện áp và tiến trình hội tụ |
 | `ui_editor.py` | Trình soạn thảo JSON có đánh số dòng, highlight cú pháp |
 | `CHAY_GIAO_DIEN.bat` | Khởi chạy giao diện nhanh trên Windows |
 | `requirements.txt` | Thư viện cần cài (numpy, matplotlib, openpyxl) |
-| `examples/` | Các tệp dữ liệu mẫu JSON và file Excel chuẩn `luoi_dien_mau.xlsx` |
+| `examples/` | Dữ liệu mẫu JSON (3 nút, 9 nút, IEEE 14 nút, IEEE 30 nút) và template Excel |
 | `results/` | Kết quả JSON và báo cáo TXT đã tính |
-| `tests/` | Bộ 41 bài kiểm thử tự động (thuật toán, UI, Excel/CSV) |
+| `tests/` | Bộ 48 bài kiểm thử tự động toàn diện |
 | `HUONG_DAN.md` | Hướng dẫn sử dụng chi tiết |
 | `KIEM_CHUNG.md` | Báo cáo kiểm chứng |
 

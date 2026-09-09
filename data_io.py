@@ -6,6 +6,7 @@ hai chiều giữa file bảng tính và đối tượng dữ liệu lưới đi
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -518,3 +519,225 @@ def load_from_csv(path: Union[str, Path]) -> Dict[str, Any]:
         "buses": buses,
         "branches": branches
     }
+
+
+def export_full_results_to_excel(result: Dict[str, Any], path: Union[str, Path]) -> None:
+    """Xuất toàn bộ kết quả tính toán trào lưu công suất ra file Excel 4 sheet chuyên nghiệp."""
+    if not HAS_OPENPYXL:
+        raise CaseError("Cần thư viện openpyxl để xuất file Excel. Vui lòng cài đặt: pip install openpyxl")
+
+    wb = openpyxl.Workbook()
+    ws_summary = wb.active
+    ws_summary.title = "Tổng quan & KPIs"
+    ws_buses = wb.create_sheet(title="Điện áp nút")
+    ws_branches = wb.create_sheet(title="Công suất nhánh")
+    ws_warnings = wb.create_sheet(title="Cảnh báo & Vi phạm")
+
+    # Font và Style chuẩn
+    font_title = Font(name="Segoe UI", size=13, bold=True, color="0D9488")
+    font_section = Font(name="Segoe UI", size=11, bold=True, color="0F172A")
+    font_header = Font(name="Segoe UI", size=10, bold=True, color="FFFFFF")
+    font_bold = Font(name="Segoe UI", size=10, bold=True)
+    font_regular = Font(name="Segoe UI", size=10)
+    font_alert = Font(name="Segoe UI", size=10, bold=True, color="DC2626")
+
+    fill_teal = PatternFill(start_color="0D9488", end_color="0D9488", fill_type="solid")
+    fill_slate = PatternFill(start_color="334155", end_color="334155", fill_type="solid")
+    fill_warn = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+    fill_crit = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+
+    border_thin = Border(
+        left=Side(style="thin", color="E2E8F0"),
+        right=Side(style="thin", color="E2E8F0"),
+        top=Side(style="thin", color="E2E8F0"),
+        bottom=Side(style="thin", color="E2E8F0")
+    )
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_right = Alignment(horizontal="right", vertical="center")
+    align_left = Alignment(horizontal="left", vertical="center")
+
+    # ==================== SHEET 1: TỔNG QUAN & KPIS ====================
+    ws_summary.cell(row=1, column=1, value="BÁO CÁO PHÂN TÍCH CHẾ ĐỘ XÁC LẬP LƯỚI ĐIỆN").font = font_title
+    ws_summary.cell(row=2, column=1, value=f"Tên hệ thống: {result.get('name', 'Lưới điện')}").font = font_regular
+
+    meta_items = [
+        ("Trạng thái hội tụ:", "Hội tụ thành công" if result.get("converged") else "Không hội tụ"),
+        ("Số bước lặp Newton:", f"{result.get('iterations', 0)} bước ({result.get('passes', 1)} lượt giải)"),
+        ("Sai lệch cực đại:", f"{result.get('max_mismatch_pu', 0):.3e} p.u."),
+        ("Công suất cơ sở (Sbase):", f"{result.get('base_mva', 100):g} MVA"),
+        ("Số lượng nút:", len(result.get("buses", []))),
+        ("Số lượng nhánh:", len(result.get("branches", [])))
+    ]
+    for r_idx, (lbl, val) in enumerate(meta_items, start=4):
+        ws_summary.cell(row=r_idx, column=1, value=lbl).font = font_bold
+        ws_summary.cell(row=r_idx, column=2, value=str(val)).font = font_regular
+
+    # Bảng chỉ số KPI
+    ws_summary.cell(row=11, column=1, value="CHỈ SỐ CÂN BẰNG CÔNG SUẤT TOÀN HỆ THỐNG").font = font_section
+    kpi_headers = ["Chỉ số", "Công suất tác dụng P (MW)", "Công suất phản kháng Q (Mvar)", "Ghi chú"]
+    for c_idx, h in enumerate(kpi_headers, start=1):
+        cell = ws_summary.cell(row=12, column=c_idx, value=h)
+        cell.font = font_header
+        cell.fill = fill_teal
+        cell.alignment = align_center
+
+    s = result.get("summary", {})
+    pg_tot = s.get("pg_total_mw", 0.0)
+    qg_tot = s.get("qg_total_mvar", 0.0)
+    pd_tot = s.get("pd_total_mw", 0.0)
+    qd_tot = s.get("qd_total_mvar", 0.0)
+    p_loss = s.get("p_total_loss_mw", 0.0)
+    q_loss = s.get("q_network_net_mvar", 0.0)
+    loss_pct = (p_loss / pg_tot * 100.0) if pg_tot > 0 else 0.0
+    s_tot = math.hypot(pg_tot, qg_tot)
+    cos_phi = (pg_tot / s_tot) if s_tot > 0 else 1.0
+
+    kpi_rows = [
+        ("Tổng công suất phát:", pg_tot, qg_tot, "Tổng từ tất cả các nút SLACK và PV"),
+        ("Tổng phụ tải tiêu thụ:", pd_tot, qd_tot, "Tổng công suất tải P, Q"),
+        ("Tổng tổn thất lưới điện:", p_loss, q_loss, f"Tỷ lệ tổn thất: {loss_pct:.2f}% tổng công suất phát"),
+        ("Hệ số công suất hệ thống (cosφ):", round(cos_phi, 4), "—", "Hệ số công suất phát tổng thể"),
+        ("Sai số cân bằng (Balance Error):", s.get("p_balance_error_mw", 0.0), s.get("q_balance_error_mvar", 0.0), "Sai số kiểm chứng định luật Kirchhoff")
+    ]
+
+    for r_idx, (title, p_val, q_val, note) in enumerate(kpi_rows, start=13):
+        ws_summary.cell(row=r_idx, column=1, value=title).font = font_bold
+        c_p = ws_summary.cell(row=r_idx, column=2, value=p_val)
+        c_q = ws_summary.cell(row=r_idx, column=3, value=q_val)
+        c_n = ws_summary.cell(row=r_idx, column=4, value=note)
+        for c in (c_p, c_q, c_n):
+            c.font = font_regular
+            c.border = border_thin
+        ws_summary.cell(row=r_idx, column=1).border = border_thin
+        c_p.alignment = align_right
+        c_q.alignment = align_right
+
+    # ==================== SHEET 2: ĐIỆN ÁP NÚT ====================
+    bus_cols = [
+        ("id", "Mã nút"), ("type_final", "Loại nút"),
+        ("vm_pu", "Điện áp (p.u.)"), ("va_deg", "Góc pha (độ)"),
+        ("voltage_kv", "Điện áp dây (kV)"), ("pg_mw", "Phát P (MW)"),
+        ("qg_mvar", "Phát Q (Mvar)"), ("pd_mw", "Tải P (MW)"),
+        ("qd_mvar", "Tải Q (Mvar)")
+    ]
+    for c_idx, (_k, label) in enumerate(bus_cols, start=1):
+        cell = ws_buses.cell(row=1, column=c_idx, value=label)
+        cell.font = font_header
+        cell.fill = fill_teal
+        cell.alignment = align_center
+
+    for r_idx, b in enumerate(result.get("buses", []), start=2):
+        for c_idx, (key, _) in enumerate(bus_cols, start=1):
+            val = b.get(key)
+            cell = ws_buses.cell(row=r_idx, column=c_idx, value=val)
+            cell.border = border_thin
+            if key in ("id", "type_final"):
+                cell.alignment = align_center
+                cell.font = font_bold if key == "id" else font_regular
+            else:
+                cell.alignment = align_right
+                cell.font = font_regular
+
+            # Cảnh báo điện áp ngoài dải an toàn [0.95, 1.05]
+            if key == "vm_pu" and val is not None:
+                if val < 0.95 or val > 1.05:
+                    cell.fill = fill_warn
+                    cell.font = font_alert
+
+    # ==================== SHEET 3: CÔNG SUẤT NHÁNH ====================
+    branch_cols = [
+        ("id", "Mã nhánh"), ("from_bus", "Nút đầu"), ("to_bus", "Nút cuối"),
+        ("status", "Đóng/Cắt"), ("p_from_mw", "Pf (MW)"), ("q_from_mvar", "Qf (Mvar)"),
+        ("p_to_mw", "Pt (MW)"), ("q_to_mvar", "Qt (Mvar)"), ("p_loss_mw", "ΔP (MW)"),
+        ("i_from_ka", "If (kA)"), ("i_to_ka", "It (kA)"), ("loading_percent", "Mang tải (%)")
+    ]
+    for c_idx, (_k, label) in enumerate(branch_cols, start=1):
+        cell = ws_branches.cell(row=1, column=c_idx, value=label)
+        cell.font = font_header
+        cell.fill = fill_slate
+        cell.alignment = align_center
+
+    for r_idx, br in enumerate(result.get("branches", []), start=2):
+        for c_idx, (key, _) in enumerate(branch_cols, start=1):
+            val = br.get(key)
+            if key == "status":
+                val = "Đóng" if val else "Cắt"
+            cell = ws_branches.cell(row=r_idx, column=c_idx, value=val)
+            cell.border = border_thin
+            if key in ("id", "from_bus", "to_bus", "status"):
+                cell.alignment = align_center
+                cell.font = font_bold if key == "id" else font_regular
+            else:
+                cell.alignment = align_right
+                cell.font = font_regular
+
+            # Tô màu cảnh báo mức mang tải
+            if key == "loading_percent" and val is not None:
+                if val >= 100.0:
+                    cell.fill = fill_crit
+                    cell.font = font_alert
+                elif val >= 80.0:
+                    cell.fill = fill_warn
+
+    # ==================== SHEET 4: CẢNH BÁO & VI PHẠM ====================
+    ws_warnings.cell(row=1, column=1, value="DANH SÁCH CẢNH BÁO VẬN HÀNH & VI PHẠM").font = font_section
+    warn_headers = ["STT", "Phân loại", "Phần tử", "Nội dung cảnh báo"]
+    for c_idx, h in enumerate(warn_headers, start=1):
+        cell = ws_warnings.cell(row=2, column=c_idx, value=h)
+        cell.font = font_header
+        cell.fill = fill_teal
+        cell.alignment = align_center
+
+    warn_rows = []
+    w_idx = 1
+
+    # Quá tải đường dây
+    for br in result.get("branches", []):
+        load_pct = br.get("loading_percent")
+        if load_pct is not None and load_pct >= 80.0:
+            status_desc = "QUÁ TẢI NGUY CẤP (>100%)" if load_pct >= 100.0 else "MANG TẢI CAO (80-100%)"
+            warn_rows.append((w_idx, status_desc, f"Nhánh {br.get('id')}", f"Mức mang tải đạt {load_pct:.1f}% định mức"))
+            w_idx += 1
+
+    # Vi phạm điện áp
+    for b in result.get("buses", []):
+        vm = b.get("vm_pu")
+        if vm is not None and (vm < 0.95 or vm > 1.05):
+            desc = "SỤT ÁP (<0.95 pu)" if vm < 0.95 else "QUÁ ÁP (>1.05 pu)"
+            warn_rows.append((w_idx, desc, f"Nút {b.get('id')}", f"Điện áp U = {vm:.4f} p.u. (ngoài khoảng an toàn)"))
+            w_idx += 1
+
+    # Cảnh báo từ bộ giải
+    for w in result.get("warnings", []):
+        warn_rows.append((w_idx, "Bộ giải / Chuyển nút", "Hệ thống", str(w)))
+        w_idx += 1
+
+    if not warn_rows:
+        ws_warnings.cell(row=3, column=1, value="1")
+        ws_warnings.cell(row=3, column=2, value="An toàn")
+        ws_warnings.cell(row=3, column=3, value="Toàn hệ thống")
+        ws_warnings.cell(row=3, column=4, value="Không có vi phạm điện áp hay quá tải đường dây.")
+    else:
+        for r_idx, (stt, cat, comp, msg) in enumerate(warn_rows, start=3):
+            c1 = ws_warnings.cell(row=r_idx, column=1, value=stt)
+            c2 = ws_warnings.cell(row=r_idx, column=2, value=cat)
+            c3 = ws_warnings.cell(row=r_idx, column=3, value=comp)
+            c4 = ws_warnings.cell(row=r_idx, column=4, value=msg)
+            for c in (c1, c2, c3, c4):
+                c.border = border_thin
+                c.font = font_regular
+            c1.alignment = align_center
+            c2.alignment = align_center
+            if "QUÁ TẢI" in cat or "SỤT ÁP" in cat:
+                c2.fill = fill_warn
+                c2.font = font_bold
+
+    # Tự động căn chỉnh độ rộng các cột
+    for ws in wb.worksheets:
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or "")) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(13, min(50, max_len + 3))
+
+    wb.save(path)
+

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 
@@ -102,6 +102,13 @@ class NetworkDiagram(ttk.Frame):
         )
         self.btn_concentric.pack(side="left", padx=2)
 
+        # Nút Phân tầng cấp điện áp
+        self.btn_voltage_hier = ttk.Button(
+            right_box, text="⚡ Cấp điện áp",
+            command=self.apply_voltage_hierarchy_layout, style="Small.TButton"
+        )
+        self.btn_voltage_hier.pack(side="left", padx=2)
+
         # Nút Vừa màn hình
         self.btn_fit = ttk.Button(
             right_box, text="⛶ Vừa khung",
@@ -116,6 +123,13 @@ class NetworkDiagram(ttk.Frame):
         )
         self.btn_reset.pack(side="left", padx=2)
 
+        # Nút Xuất ảnh vector
+        self.btn_export_ps = ttk.Button(
+            right_box, text="📷 Xuất vector...",
+            command=self._export_image, style="Small.TButton"
+        )
+        self.btn_export_ps.pack(side="left", padx=2)
+
         # Thu phóng
         self.btn_zoom_out = ttk.Button(
             right_box, text="−", width=3,
@@ -129,7 +143,7 @@ class NetworkDiagram(ttk.Frame):
         )
         self.btn_zoom_in.pack(side="left", padx=1)
 
-        # 2. Thanh bộ lọc hiển thị (Filter Sub-bar)
+        # 2. Thanh bộ lọc & tìm kiếm (Filter & Search Sub-bar)
         self.filter_bar = ttk.Frame(self, padding=(8, 3))
         self.filter_bar.grid(row=2, column=0, sticky="ew")
 
@@ -154,6 +168,16 @@ class NetworkDiagram(ttk.Frame):
             self.filter_bar, text="⚠️ Chỉ hiện cảnh báo", variable=self.warnings_only_var,
             command=self.draw_diagram
         ).pack(side="left", padx=6)
+
+        # Ô tìm kiếm nút nhanh
+        ttk.Label(self.filter_bar, text="│  🔍 Tìm nút:", font=("Segoe UI", 8)).pack(side="left", padx=(10, 4))
+        self.search_entry = ttk.Entry(self.filter_bar, width=6)
+        self.search_entry.pack(side="left", padx=2)
+        self.search_entry.bind("<Return>", lambda _e: self._on_search_bus())
+        self.btn_search = ttk.Button(
+            self.filter_bar, text="Định vị", command=self._on_search_bus, style="Small.TButton"
+        )
+        self.btn_search.pack(side="left", padx=2)
 
         self.btn_clear_focus = ttk.Button(
             self.filter_bar, text="Bỏ chọn tiêu điểm",
@@ -442,6 +466,68 @@ class NetworkDiagram(ttk.Frame):
             for i, b in enumerate(buses[half:]):
                 ang = -math.pi / 2 + 2 * math.pi * i / (n - half)
                 self.bus_coords[str(b["id"])] = (cx + r2 * math.cos(ang), cy + r2 * math.sin(ang))
+
+        self.fit_to_view()
+
+    def apply_voltage_hierarchy_layout(self):
+        """Bố trí các nút theo phân tầng cấp điện áp hoặc cấu trúc nguồn - tải (SLACK/PV ở trên, PQ ở dưới)."""
+        if not self.result or not self.result.get("buses"):
+            return
+
+        buses = self.result["buses"]
+        n = len(buses)
+        if n == 0:
+            return
+
+        w = max(600, self.canvas.winfo_width() or 800)
+        h = max(450, self.canvas.winfo_height() or 600)
+        cx = w / 2
+
+        # Kiểm tra xem các nút có base_kv khác nhau không
+        valid_kvs = [b.get("base_kv") for b in buses if b.get("base_kv") is not None]
+        has_multi_kv = len(set(valid_kvs)) > 1
+
+        levels_map: Dict[Any, List[Dict[str, Any]]] = {}
+
+        if has_multi_kv:
+            # Nhóm theo base_kv giảm dần (cấp áp cao ở hàng trên)
+            kv_sorted = sorted(set(valid_kvs), reverse=True)
+            for kv in kv_sorted:
+                levels_map[f"{kv} kV"] = [b for b in buses if b.get("base_kv") == kv]
+        else:
+            # Phân tầng logic: Nguồn phát (SLACK -> PV) ở tầng trên, Phụ tải (PQ) ở tầng dưới
+            slack_buses = [b for b in buses if b.get("type_final", b.get("type")) == "SLACK"]
+            pv_buses = [b for b in buses if b.get("type_final", b.get("type")) == "PV"]
+            pq_buses = [b for b in buses if b.get("type_final", b.get("type")) == "PQ"]
+
+            if slack_buses:
+                levels_map["SLACK"] = slack_buses
+            if pv_buses:
+                levels_map["PV"] = pv_buses
+
+            if len(pq_buses) > 10:
+                mid = len(pq_buses) // 2
+                levels_map["PQ_1"] = pq_buses[:mid]
+                levels_map["PQ_2"] = pq_buses[mid:]
+            elif pq_buses:
+                levels_map["PQ"] = pq_buses
+
+        n_levels = len(levels_map)
+        if n_levels == 0:
+            return
+
+        row_spacing = min(180.0, max(90.0, (h * 0.75) / max(1, n_levels - 1)))
+        start_y = (h / 2) - ((n_levels - 1) * row_spacing) / 2
+
+        self.bus_coords.clear()
+        for lvl_idx, (_lvl_name, lvl_buses) in enumerate(levels_map.items()):
+            m = len(lvl_buses)
+            y = start_y + lvl_idx * row_spacing
+            col_spacing = min(140.0, max(70.0, (w * 0.8) / max(1, m)))
+            start_x = cx - ((m - 1) * col_spacing) / 2
+            for i, b in enumerate(lvl_buses):
+                x = start_x + i * col_spacing
+                self.bus_coords[str(b["id"])] = (x, y)
 
         self.fit_to_view()
 
@@ -940,6 +1026,55 @@ class NetworkDiagram(ttk.Frame):
         self.selected_bus = None
         self.btn_clear_focus.pack_forget()
         self.draw_diagram()
+
+    def locate_bus(self, bus_id: Any) -> bool:
+        """Định vị, căn giữa và làm nổi bật tiêu điểm vào nút được chỉ định."""
+        str_id = str(bus_id).strip()
+        if not str_id or str_id not in self.bus_coords:
+            return False
+        self.selected_bus = str_id
+        if not self.btn_clear_focus.winfo_ismapped():
+            self.btn_clear_focus.pack(side="left", padx=6)
+
+        bx, by = self.bus_coords[str_id]
+        cx = (self.canvas.winfo_width() or 700) / 2
+        cy = (self.canvas.winfo_height() or 500) / 2
+        self.offset_x = cx - bx
+        self.offset_y = cy - by
+        self.scale = max(self.scale, 1.25)
+        self.info_label.configure(text=f"Tiêu điểm: Nút {str_id} · Nhấp ra ngoài để bỏ chọn")
+        self.draw_diagram()
+        return True
+
+    def _on_search_bus(self):
+        """Tìm kiếm nút từ ô nhập liệu trên thanh công cụ."""
+        val = self.search_entry.get().strip()
+        if not val:
+            return
+        if not self.locate_bus(val):
+            messagebox.showwarning("Không tìm thấy", f"Không tìm thấy Nút '{val}' trong hệ thống.")
+
+    def _export_image(self):
+        """Xuất sơ đồ ra tệp vector PostScript (.ps/.eps)."""
+        if not self.result or not self.bus_coords:
+            messagebox.showinfo("Xuất sơ đồ", "Chưa có dữ liệu sơ đồ để xuất.")
+            return
+        path = filedialog.asksaveasfilename(
+            title="Xuất sơ đồ đơn tuyến",
+            defaultextension=".eps",
+            filetypes=[
+                ("Encapsulated PostScript (*.eps)", "*.eps"),
+                ("PostScript (*.ps)", "*.ps"),
+                ("Mọi tệp (*.*)", "*.*")
+            ]
+        )
+        if not path:
+            return
+        try:
+            self.canvas.postscript(file=path, colormode="color")
+            messagebox.showinfo("Thành công", f"Đã xuất sơ đồ thành công sang:\n{path}")
+        except Exception as e:
+            messagebox.showerror("Lỗi xuất sơ đồ", f"Không thể xuất ảnh: {e}")
 
     def _on_canvas_drag(self, event):
         if self._dragging_bus:

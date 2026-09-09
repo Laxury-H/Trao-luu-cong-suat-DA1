@@ -1,6 +1,7 @@
 """Giao diện máy tính để bàn: python gui.py."""
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import math
@@ -12,9 +13,11 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
+from contingency import run_n1_contingency_analysis
 from data_io import (
     create_sample_excel_template,
     export_case_to_excel,
+    export_full_results_to_excel,
     load_from_csv,
     load_from_excel,
 )
@@ -77,6 +80,7 @@ TEAL, LINE, RED = "#0d9488", "#e2e8f0", "#dc2626"
 EXAMPLES = {
     "3 nút · SLACK / PV / PQ": "luoi_3_nut.json",
     "9 nút · MATPOWER case9": "luoi_9_nut.json",
+    "14 nút · IEEE 14-bus": "luoi_14_nut.json",
     "30 nút · IEEE 30-bus": "luoi_30_nut.json",
     "3 nút · PV chạm Qmax": "luoi_3_nut_gioi_han_q.json"
 }
@@ -239,6 +243,15 @@ class PowerFlowApp(tk.Tk):
         lbl2 = tk.Label(self.header_title_frame, text="PHÂN TÍCH CHẾ ĐỘ XÁC LẬP LƯỚI ĐIỆN", bg=theme["header_bg"], fg=theme["header_sub"], font=("Segoe UI", 8, "bold"))
         lbl2.pack(anchor="w", pady=(1, 0))
 
+        # Đèn báo trạng thái trực quan thời gian thực
+        self.header_status_frame = tk.Frame(self.header, bg=theme["header_bg"])
+        self.header_status_frame.pack(side="left", padx=(24, 0))
+        self.header_status_dot = tk.Label(
+            self.header_status_frame, text="● Sẵn sàng",
+            bg=theme["header_bg"], fg="#10b981", font=("Segoe UI", 9, "bold")
+        )
+        self.header_status_dot.pack(side="left")
+
         # Nút chuyển giao diện Sáng / Tối
         self.theme_btn = ttk.Button(self.header, text="🌙 Chế độ tối", command=self.toggle_theme, style="Small.TButton")
         self.theme_btn.pack(side="right", padx=(8, 0))
@@ -253,7 +266,7 @@ class PowerFlowApp(tk.Tk):
                         bg=theme["header_bg"], fg=theme["header_sub"], font=("Segoe UI", 9))
         lbl3.pack(side="right", padx=(0, 12))
 
-        self._header_labels = [lbl1, lbl2, lbl3]
+        self._header_labels = [lbl1, lbl2, lbl3, self.header_status_dot]
 
     def toggle_theme(self):
         self.theme_mode = "dark" if self.theme_mode == "light" else "light"
@@ -266,11 +279,15 @@ class PowerFlowApp(tk.Tk):
         self._configure_styles()
         self.header.configure(background=theme["header_bg"])
         self.header_title_frame.configure(background=theme["header_bg"])
+        if hasattr(self, "header_status_frame"):
+            self.header_status_frame.configure(background=theme["header_bg"])
         self.header_mark.configure(bg=theme["teal"])
         for lbl in self._header_labels:
             lbl.configure(background=theme["header_bg"])
             if lbl == self._header_labels[0]:
                 lbl.configure(fg=theme["header_fg"])
+            elif hasattr(self, "header_status_dot") and lbl == self.header_status_dot:
+                pass  # Giữ nguyên màu trạng thái đèn báo
             else:
                 lbl.configure(fg=theme["header_sub"])
 
@@ -284,6 +301,19 @@ class PowerFlowApp(tk.Tk):
         for kind in self.tables:
             self._configure_table_tags(self.tables[kind])
             self.render_table(kind)
+
+        if hasattr(self, "n1_table"):
+            self._configure_n1_table_tags()
+            self._render_n1_rows()
+        if hasattr(self, "compare_bus_table"):
+            self._configure_table_tags(self.compare_bus_table)
+            self._configure_table_tags(self.compare_branch_table)
+        if hasattr(self, "n1_cards"):
+            for card in self.n1_cards.values():
+                card.configure(bg=theme["surface"])
+        if hasattr(self, "compare_cards"):
+            for card in self.compare_cards.values():
+                card.configure(bg=theme["surface"])
 
         self._set_state(self.state_text.get(), self._current_tone)
 
@@ -310,6 +340,9 @@ class PowerFlowApp(tk.Tk):
         self.bus_table = self._build_table_tab("buses", "Điện áp nút", BUS_COLUMNS, "U dây: kV · Công suất: MW / Mvar tổng ba pha")
         self.branch_table = self._build_table_tab("branches", "Công suất nhánh", BRANCH_COLUMNS,
                                                   "P, Q dương: từ nút đi vào nhánh · —: thiếu cơ sở hoặc định mức")
+
+        self._build_contingency_tab()
+        self._build_scenario_compare_tab()
 
         report_frame = ttk.Frame(self.tabs, style="Card.TFrame", padding=14)
         self.tabs.add(report_frame, text="Báo cáo")
@@ -517,6 +550,471 @@ class PowerFlowApp(tk.Tk):
         parent.columnconfigure(0, weight=1)
         return tree
 
+    def _configure_n1_table_tags(self):
+        if not hasattr(self, "n1_table"):
+            return
+        if self.theme_mode == "dark":
+            self.n1_table.tag_configure("even", background="#1e293b")
+            self.n1_table.tag_configure("odd", background="#0f172a")
+            self.n1_table.tag_configure("safe", background="#064e3b", foreground="#4ade80")
+            self.n1_table.tag_configure("warning", background="#451a03", foreground="#fbbf24")
+            self.n1_table.tag_configure("critical", background="#450a0a", foreground="#f87171")
+        else:
+            self.n1_table.tag_configure("even", background="#f8fafc")
+            self.n1_table.tag_configure("odd", background="#ffffff")
+            self.n1_table.tag_configure("safe", background="#dcfce7", foreground="#15803d")
+            self.n1_table.tag_configure("warning", background="#fef3c7", foreground="#b45309")
+            self.n1_table.tag_configure("critical", background="#fee2e2", foreground="#b91c1c")
+
+    def _build_contingency_tab(self):
+        self.n1_frame = ttk.Frame(self.tabs, style="Card.TFrame", padding=14)
+        self.tabs.add(self.n1_frame, text="🛡️ Quét sự cố N-1")
+
+        toolbar = ttk.Frame(self.n1_frame, style="Card.TFrame")
+        toolbar.pack(fill="x", pady=(0, 10))
+
+        self.btn_run_n1 = ttk.Button(
+            toolbar, text="⚡ Chạy phân tích N-1", command=self.run_n1_analysis, style="Primary.TButton"
+        )
+        self.btn_run_n1.pack(side="left")
+
+        self.btn_export_n1 = ttk.Button(
+            toolbar, text="Xuất bảng N-1...", command=self.export_n1_results, style="Small.TButton"
+        )
+        self.btn_export_n1.pack(side="left", padx=8)
+
+        self.btn_view_n1_diagram = ttk.Button(
+            toolbar, text="🔍 Xem trên sơ đồ", command=self.view_contingency_on_diagram, style="Small.TButton"
+        )
+        self.btn_view_n1_diagram.pack(side="left", padx=2)
+
+        self.n1_status_var = tk.StringVar(value="Sẵn sàng quét sự cố cho tất cả nhánh trong hệ thống.")
+        ttk.Label(toolbar, textvariable=self.n1_status_var, style="CardMuted.TLabel").pack(side="right", padx=6)
+
+        kpi_row = ttk.Frame(self.n1_frame, style="Card.TFrame")
+        kpi_row.pack(fill="x", pady=(0, 10))
+        kpi_row.columnconfigure((0, 1, 2, 3), weight=1)
+
+        self.n1_cards = {}
+        card_configs = [
+            ("total", "Tổng số kịch bản", "—", "#0f172a"),
+            ("safe", "An toàn (Không vi phạm)", "—", "#15803d"),
+            ("warning", "Cảnh báo (Quá tải/Áp)", "—", "#b45309"),
+            ("critical", "Nguy cấp (Rã lưới / Không hội tụ)", "—", "#b91c1c")
+        ]
+        for col, (key, title, init_val, fg_color) in enumerate(card_configs):
+            card = ttk.Frame(kpi_row, style="Card.TFrame", padding=(10, 8), borderwidth=1, relief="solid")
+            card.grid(row=0, column=col, sticky="nsew", padx=4)
+            ttk.Label(card, text=title, style="CardMuted.TLabel").pack(anchor="w")
+            lbl_val = tk.Label(card, text=init_val, font=("Segoe UI", 13, "bold"), fg=fg_color, bg=SURFACE)
+            lbl_val.pack(anchor="w", pady=(4, 0))
+            self.n1_cards[key] = lbl_val
+
+        table_frame = ttk.Frame(self.n1_frame, style="Card.TFrame")
+        table_frame.pack(fill="both", expand=True)
+
+        n1_cols = [
+            ("contingency_id", "Kịch bản N-1", 130),
+            ("branch_id", "Nhánh cắt", 80),
+            ("from_to", "Tuyến", 80),
+            ("status_text", "Đánh giá", 110),
+            ("pi_score", "Điểm PI", 80),
+            ("max_loading", "Tải max (%)", 90),
+            ("worst_bus", "Nút sụt áp nhất", 130),
+            ("detail_message", "Chi tiết vi phạm & cảnh báo", 320)
+        ]
+        self.n1_table = ttk.Treeview(
+            table_frame, columns=[col[0] for col in n1_cols], show="headings", selectmode="browse"
+        )
+        for key, title, width in n1_cols:
+            self.n1_table.heading(key, text=title, command=lambda c=key: self.sort_n1_table(c))
+            self.n1_table.column(
+                key, width=width, minwidth=60,
+                anchor="w" if key in ("contingency_id", "detail_message", "worst_bus", "status_text") else "e"
+            )
+
+        n1_xbar = ttk.Scrollbar(table_frame, orient="horizontal", command=self.n1_table.xview)
+        n1_ybar = ttk.Scrollbar(table_frame, orient="vertical", command=self.n1_table.yview)
+        self.n1_table.configure(xscrollcommand=n1_xbar.set, yscrollcommand=n1_ybar.set)
+        self.n1_table.grid(row=0, column=0, sticky="nsew")
+        n1_ybar.grid(row=0, column=1, sticky="ns")
+        n1_xbar.grid(row=1, column=0, sticky="ew")
+        table_frame.rowconfigure(0, weight=1)
+        table_frame.columnconfigure(0, weight=1)
+
+        self._configure_n1_table_tags()
+        self.n1_table.bind("<Double-1>", lambda _e: self.view_contingency_on_diagram())
+
+        self.n1_results_data = []
+        self.n1_sort_col = "pi_score"
+        self.n1_sort_desc = True
+
+        hint = ttk.Label(
+            self.n1_frame,
+            text="Ghi chú: Chỉ số PI (Performance Index) đánh giá mức căng thẳng của hệ thống. Nhấp đúp vào sự cố để định vị trên sơ đồ đơn tuyến.",
+            style="CardMuted.TLabel"
+        )
+        hint.pack(anchor="w", pady=(6, 0))
+
+    def run_n1_analysis(self):
+        if not self.validate_input():
+            messagebox.showerror("Dữ liệu không hợp lệ", "Vui lòng sửa các lỗi dữ liệu trước khi quét sự cố N-1.", parent=self)
+            return
+        data = parse_case(self.text())
+        tol, max_iter = self._read_options()
+        enforce_q = self.enforce_q.get()
+
+        self.btn_run_n1.configure(state="disabled", text="Đang quét N-1…")
+        self.n1_status_var.set("Đang chạy mô phỏng ngắt từng nhánh trong hệ thống...")
+        self.update_idletasks()
+
+        def run():
+            try:
+                res = run_n1_contingency_analysis(data, tolerance=tol, max_iterations=max_iter, enforce_q_limits=enforce_q)
+                self.after(0, lambda: self._on_n1_finished(res, None))
+            except Exception as e:
+                self.after(0, lambda: self._on_n1_finished(None, e))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _on_n1_finished(self, res, error):
+        self.btn_run_n1.configure(state="normal", text="⚡ Chạy phân tích N-1")
+        if error:
+            messagebox.showerror("Lỗi phân tích N-1", str(error), parent=self)
+            self.n1_status_var.set(f"Lỗi: {error}")
+            return
+
+        self.n1_results_data = res.get("contingencies", [])
+        self.n1_cards["total"].configure(text=str(res.get("total_contingencies", len(self.n1_results_data))))
+        self.n1_cards["safe"].configure(text=str(res.get("secure_count", 0)))
+        self.n1_cards["warning"].configure(text=str(res.get("warning_count", 0)))
+        self.n1_cards["critical"].configure(text=str(res.get("critical_count", 0)))
+
+        self.n1_status_var.set(
+            f"Hoàn thành: {res.get('total_contingencies')} sự cố ({res.get('secure_count')} an toàn, "
+            f"{res.get('warning_count')} cảnh báo, {res.get('critical_count')} nguy cấp)"
+        )
+        self._render_n1_rows()
+
+    def sort_n1_table(self, key):
+        if self.n1_sort_col == key:
+            self.n1_sort_desc = not self.n1_sort_desc
+        else:
+            self.n1_sort_col = key
+            self.n1_sort_desc = True
+        self._render_n1_rows()
+
+    def _render_n1_rows(self):
+        self.n1_table.delete(*self.n1_table.get_children())
+        rows = list(self.n1_results_data)
+        if not rows:
+            return
+
+        key = self.n1_sort_col
+        rev = self.n1_sort_desc
+        if key:
+            rows.sort(key=lambda r: (r.get(key) is None, r.get(key) if r.get(key) is not None else 0), reverse=rev)
+
+        for i, r in enumerate(rows):
+            from_to = f"{r.get('from_bus')} ➔ {r.get('to_bus')}"
+            worst_v_txt = f"Nút {r.get('worst_voltage_bus')} ({r.get('min_voltage'):.4f} pu)" if r.get("worst_voltage_bus") and r.get("min_voltage") is not None else "—"
+            max_load_txt = f"{r.get('max_loading'):.1f}%" if r.get("max_loading") is not None else "—"
+
+            vals = [
+                r.get("contingency_id", ""),
+                r.get("branch_id", ""),
+                from_to,
+                r.get("status_text", ""),
+                f"{r.get('pi_score', 0.0):.2f}",
+                max_load_txt,
+                worst_v_txt,
+                r.get("detail_message", "")
+            ]
+
+            sev = r.get("severity", "SECURE")
+            tag = "safe" if sev == "SECURE" else ("warning" if sev == "WARNING" else "critical")
+            self.n1_table.insert("", "end", values=vals, tags=(tag,))
+
+    def view_contingency_on_diagram(self):
+        sel = self.n1_table.selection()
+        if not sel:
+            messagebox.showinfo("Xem trên sơ đồ", "Hãy chọn một dòng sự cố trong bảng để xem.", parent=self)
+            return
+        item_vals = self.n1_table.item(sel[0], "values")
+        if not item_vals:
+            return
+        branch_id = item_vals[1]
+        from_to = item_vals[2]
+        detail = item_vals[7]
+
+        # Chuyển tab sang Sơ đồ lưới
+        self.tabs.select(self.diagram)
+        # Định vị nút đầu của nhánh
+        parts = from_to.split("➔")
+        if len(parts) == 2:
+            from_bus = parts[0].strip()
+            self.diagram.locate_bus(from_bus)
+            self.diagram.info_label.configure(
+                text=f"SỰ CỐ N-1: Ngắt nhánh {branch_id} ({from_to}) · {detail}"
+            )
+
+    def export_n1_results(self):
+        if not self.n1_results_data:
+            messagebox.showinfo("Xuất kết quả N-1", "Chưa có kết quả phân tích N-1 để xuất.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Xuất bảng sự cố N-1",
+            defaultextension=".csv",
+            filetypes=[("Bảng tính CSV", "*.csv"), ("Tất cả", "*.*")]
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Kịch bản N-1", "Nhánh cắt", "Đầu", "Cuối", "Đánh giá", "Điểm PI", "Tải max (%)", "Nút sụt áp nhất", "Chi tiết vi phạm"])
+                for r in self.n1_results_data:
+                    worst_v_txt = f"Nút {r.get('worst_voltage_bus')} ({r.get('min_voltage'):.4f} pu)" if r.get("worst_voltage_bus") else "—"
+                    writer.writerow([
+                        r.get("contingency_id"),
+                        r.get("branch_id"),
+                        r.get("from_bus"),
+                        r.get("to_bus"),
+                        r.get("status_text"),
+                        r.get("pi_score"),
+                        r.get("max_loading"),
+                        worst_v_txt,
+                        r.get("detail_message")
+                    ])
+            messagebox.showinfo("Thành công", f"Đã xuất bảng sự cố N-1 ra:\n{path}", parent=self)
+        except Exception as e:
+            messagebox.showerror("Lỗi xuất tệp", str(e), parent=self)
+
+    def _build_scenario_compare_tab(self):
+        self.compare_frame = ttk.Frame(self.tabs, style="Card.TFrame", padding=14)
+        self.tabs.add(self.compare_frame, text="⚖️ So sánh kịch bản")
+
+        toolbar = ttk.Frame(self.compare_frame, style="Card.TFrame")
+        toolbar.pack(fill="x", pady=(0, 10))
+
+        self.btn_set_base = ttk.Button(
+            toolbar, text="📌 Lưu kết quả hiện tại làm Base Case",
+            command=self.set_as_base_case, style="Small.TButton"
+        )
+        self.btn_set_base.pack(side="left")
+
+        self.btn_clear_base = ttk.Button(
+            toolbar, text="Xóa Base Case",
+            command=self.clear_base_case, style="Small.TButton"
+        )
+        self.btn_clear_base.pack(side="left", padx=6)
+
+        self.base_case_info = tk.StringVar(value="Base Case: [Chưa lưu] (Hãy giải F5 rồi bấm nút để lưu kịch bản cơ sở)")
+        ttk.Label(toolbar, textvariable=self.base_case_info, style="CardMuted.TLabel").pack(side="left", padx=12)
+
+        delta_kpi_row = ttk.Frame(self.compare_frame, style="Card.TFrame")
+        delta_kpi_row.pack(fill="x", pady=(0, 10))
+        delta_kpi_row.columnconfigure((0, 1, 2), weight=1)
+
+        self.compare_cards = {}
+        for col, (key, title) in enumerate([
+            ("loss_delta", "Biến thiên tổn thất ΔPloss"),
+            ("volt_delta", "Độ lệch điện áp lớn nhất |ΔU|max"),
+            ("load_delta", "Biến thiên mang tải nhánh max |ΔLoad|max")
+        ]):
+            card = ttk.Frame(delta_kpi_row, style="Card.TFrame", padding=(10, 8), borderwidth=1, relief="solid")
+            card.grid(row=0, column=col, sticky="nsew", padx=4)
+            ttk.Label(card, text=title, style="CardMuted.TLabel").pack(anchor="w")
+            lbl_val = tk.Label(card, text="—", font=("Segoe UI", 12, "bold"), fg="#0f172a", bg=SURFACE)
+            lbl_val.pack(anchor="w", pady=(4, 0))
+            self.compare_cards[key] = lbl_val
+
+        self.compare_tabs = ttk.Notebook(self.compare_frame)
+        self.compare_tabs.pack(fill="both", expand=True)
+
+        bus_cmp_frame = ttk.Frame(self.compare_tabs, style="Card.TFrame", padding=6)
+        self.compare_tabs.add(bus_cmp_frame, text="So sánh điện áp nút")
+        bus_cmp_cols = [
+            ("id", "Nút", 65),
+            ("base_type", "Loại Base", 90),
+            ("cur_type", "Loại Hiện tại", 90),
+            ("base_u", "U Base (pu)", 100),
+            ("cur_u", "U Hiện tại (pu)", 100),
+            ("delta_u", "ΔU (pu)", 100),
+            ("delta_u_pct", "ΔU (%)", 90),
+            ("eval", "Đánh giá", 140)
+        ]
+        self.compare_bus_table = self.make_table(bus_cmp_frame, bus_cmp_cols)
+        self._configure_table_tags(self.compare_bus_table)
+
+        br_cmp_frame = ttk.Frame(self.compare_tabs, style="Card.TFrame", padding=6)
+        self.compare_tabs.add(br_cmp_frame, text="So sánh mang tải nhánh")
+        br_cmp_cols = [
+            ("id", "Nhánh", 80),
+            ("from_to", "Đoạn tuyến", 85),
+            ("base_p", "Pf Base (MW)", 105),
+            ("cur_p", "Pf Hiện tại (MW)", 105),
+            ("base_load", "Tải Base (%)", 95),
+            ("cur_load", "Tải Hiện tại (%)", 95),
+            ("delta_load", "ΔTải (%)", 95),
+            ("eval", "Đánh giá", 140)
+        ]
+        self.compare_branch_table = self.make_table(br_cmp_frame, br_cmp_cols)
+        self._configure_table_tags(self.compare_branch_table)
+
+        self.base_case_result = None
+
+    def set_as_base_case(self):
+        if not self.result:
+            messagebox.showinfo("So sánh kịch bản", "Chưa có kết quả trào lưu công suất. Hãy bấm F5 để giải trước.", parent=self)
+            return
+        self.base_case_result = copy.deepcopy(self.result)
+        name = self.result.get("name", "Kịch bản cơ sở")
+        buses_count = len(self.result.get("buses", []))
+        self.base_case_info.set(f"Base Case: {name} ({buses_count} nút) · Đã lưu")
+        self.update_comparison()
+        messagebox.showinfo("Thành công", "Đã lưu kết quả hiện tại làm Base Case!\nBây giờ bạn có thể thay đổi phụ tải, nguồn phát hoặc ngắt nhánh rồi bấm F5 để quan sát sai biệt so với Base Case.", parent=self)
+
+    def clear_base_case(self):
+        self.base_case_result = None
+        self.base_case_info.set("Base Case: [Chưa lưu] (Hãy giải F5 rồi bấm nút để lưu kịch bản cơ sở)")
+        for card in self.compare_cards.values():
+            card.configure(text="—")
+        self.compare_bus_table.delete(*self.compare_bus_table.get_children())
+        self.compare_branch_table.delete(*self.compare_branch_table.get_children())
+
+    def update_comparison(self):
+        if not hasattr(self, "compare_bus_table"):
+            return
+        self.compare_bus_table.delete(*self.compare_bus_table.get_children())
+        self.compare_branch_table.delete(*self.compare_branch_table.get_children())
+
+        if not self.base_case_result or not self.result:
+            for card in self.compare_cards.values():
+                card.configure(text="—")
+            return
+
+        base = self.base_case_result
+        cur = self.result
+
+        # 1. Delta Losses
+        base_ploss = base.get("total_loss_p_mw", 0.0)
+        cur_ploss = cur.get("total_loss_p_mw", 0.0)
+        delta_ploss = cur_ploss - base_ploss
+        delta_ploss_pct = (delta_ploss / max(base_ploss, 1e-4)) * 100.0 if base_ploss > 0 else 0.0
+        sign_ploss = "+" if delta_ploss >= 0 else ""
+        self.compare_cards["loss_delta"].configure(
+            text=f"{sign_ploss}{delta_ploss:.3f} MW ({sign_ploss}{delta_ploss_pct:.1f}%)"
+        )
+
+        # 2. Compare Buses
+        base_buses = {str(b["id"]): b for b in base.get("buses", [])}
+        cur_buses = {str(b["id"]): b for b in cur.get("buses", [])}
+        all_bus_ids = sorted(set(base_buses.keys()) | set(cur_buses.keys()), key=lambda x: int(x) if x.isdigit() else x)
+
+        max_delta_u = 0.0
+        for i, b_id in enumerate(all_bus_ids):
+            b_base = base_buses.get(b_id)
+            b_cur = cur_buses.get(b_id)
+
+            u_base = b_base["vm_pu"] if b_base else None
+            u_cur = b_cur["vm_pu"] if b_cur else None
+
+            if u_base is not None and u_cur is not None:
+                delta_u = u_cur - u_base
+                delta_u_pct = (delta_u / u_base) * 100.0
+                if abs(delta_u) > max_delta_u:
+                    max_delta_u = abs(delta_u)
+
+                sign = "+" if delta_u >= 0 else ""
+                eval_txt = "Ổn định"
+                tag = "even" if i % 2 == 0 else "odd"
+                if abs(delta_u) >= 0.05:
+                    eval_txt = "Biến động mạnh"
+                    tag = "warning"
+                if u_cur < 0.95 or u_cur > 1.05:
+                    eval_txt = "Vi phạm ngưỡng áp"
+                    tag = "critical"
+
+                vals = [
+                    b_id,
+                    b_base.get("type_final", "—"),
+                    b_cur.get("type_final", "—"),
+                    f"{u_base:.4f}",
+                    f"{u_cur:.4f}",
+                    f"{sign}{delta_u:.4f}",
+                    f"{sign}{delta_u_pct:.2f}%",
+                    eval_txt
+                ]
+            else:
+                vals = [b_id, "—", "—", "—", "—", "—", "—", "Không khớp nút"]
+                tag = "odd"
+
+            self.compare_bus_table.insert("", "end", values=vals, tags=(tag,))
+
+        self.compare_cards["volt_delta"].configure(text=f"{max_delta_u:.4f} p.u.")
+
+        # 3. Compare Branches
+        base_brs = {str(br["id"]): br for br in base.get("branches", [])}
+        cur_brs = {str(br["id"]): br for br in cur.get("branches", [])}
+        all_br_ids = sorted(set(base_brs.keys()) | set(cur_brs.keys()), key=lambda x: int(x) if x.isdigit() else x)
+
+        max_delta_load = 0.0
+        for j, br_id in enumerate(all_br_ids):
+            br_base = base_brs.get(br_id)
+            br_cur = cur_brs.get(br_id)
+
+            if br_base and br_cur:
+                from_to = f"{br_base.get('from_bus')} ➔ {br_base.get('to_bus')}"
+                p_base = br_base.get("p_from_mw", 0.0)
+                p_cur = br_cur.get("p_from_mw", 0.0)
+                load_base = br_base.get("loading_percent")
+                load_cur = br_cur.get("loading_percent")
+
+                if load_base is not None and load_cur is not None:
+                    delta_load = load_cur - load_base
+                    if abs(delta_load) > max_delta_load:
+                        max_delta_load = abs(delta_load)
+                    sign_load = "+" if delta_load >= 0 else ""
+                    load_diff_txt = f"{sign_load}{delta_load:.1f}%"
+                    load_b_txt = f"{load_base:.1f}%"
+                    load_c_txt = f"{load_cur:.1f}%"
+                else:
+                    delta_load = 0.0
+                    load_diff_txt = "—"
+                    load_b_txt = "—"
+                    load_c_txt = "—"
+
+                eval_br = "Bình thường"
+                tag_br = "even" if j % 2 == 0 else "odd"
+                if load_cur is not None and load_cur > 85.0:
+                    eval_br = "Quá tải"
+                    tag_br = "critical"
+                elif abs(delta_load) >= 15.0:
+                    eval_br = "Thay đổi lớn"
+                    tag_br = "warning"
+
+                vals_br = [
+                    br_id,
+                    from_to,
+                    f"{p_base:.2f}",
+                    f"{p_cur:.2f}",
+                    load_b_txt,
+                    load_c_txt,
+                    load_diff_txt,
+                    eval_br
+                ]
+            else:
+                status_note = "Đã ngắt / Bỏ" if not br_cur else "Mới thêm"
+                from_to = f"{(br_base or br_cur).get('from_bus')} ➔ {(br_base or br_cur).get('to_bus')}"
+                vals_br = [br_id, from_to, "—", "—", "—", "—", "—", status_note]
+                tag_br = "warning"
+
+            self.compare_branch_table.insert("", "end", values=vals_br, tags=(tag_br,))
+
+        self.compare_cards["load_delta"].configure(text=f"{max_delta_load:.1f}%")
+
     def _build_footer(self):
         footer = ttk.Frame(self, padding=(18, 10))
         footer.pack(side="bottom", fill="x")
@@ -529,7 +1027,12 @@ class PowerFlowApp(tk.Tk):
         label.pack(side="left", fill="x", expand=True)
 
         self.export_buttons = []
-        for extension, title in (("json", "Xuất JSON…"), ("txt", "Xuất báo cáo…"), ("csv", "Xuất CSV (Excel)…")):
+        for extension, title in (
+            ("xlsx", "Xuất Excel (4 sheet)…"),
+            ("csv", "Xuất CSV…"),
+            ("json", "Xuất JSON…"),
+            ("txt", "Xuất báo cáo…")
+        ):
             button = ttk.Button(footer, text=title, command=lambda ext=extension: self.export(ext), state="disabled")
             button.pack(side="right", padx=(6, 0))
             self.export_buttons.append(button)
@@ -568,6 +1071,16 @@ class PowerFlowApp(tk.Tk):
         bg, fg = colors.get(tone, colors["idle"])
         self.state_text.set(text)
         self.state_badge.configure(background=bg, foreground=fg)
+        if hasattr(self, "header_status_dot"):
+            dot_labels = {
+                "idle": ("● Sẵn sàng", "#10b981"),
+                "busy": ("◐ Đang tính…", "#38bdf8"),
+                "success": ("● Đã hội tụ", "#10b981"),
+                "warning": ("▲ Cảnh báo vi phạm", "#f59e0b"),
+                "error": ("✖ Chưa hội tụ", "#ef4444")
+            }
+            lbl_txt, lbl_color = dot_labels.get(tone, ("● Sẵn sàng", "#10b981"))
+            self.header_status_dot.configure(text=lbl_txt, fg=lbl_color)
 
     def set_report(self, text):
         self.report.configure(state="normal")
@@ -585,6 +1098,8 @@ class PowerFlowApp(tk.Tk):
         self.dashboard.clear("Chọn dữ liệu và thiết lập bộ giải.\nBấm Tính toán trào lưu hoặc F5 để xem kết quả.")
         if hasattr(self, "diagram"):
             self.diagram.clear()
+        if hasattr(self, "update_comparison"):
+            self.update_comparison()
         self.set_report("Chưa có báo cáo cho dữ liệu hiện tại.\n\n1. Mở tệp JSON/Excel hoặc chọn lưới mẫu.\n2. Kiểm tra dữ liệu và thiết lập bộ giải.\n3. Bấm Tính toán trào lưu (F5).\n\nKhi hội tụ, bạn có thể xem và xuất báo cáo tại đây.")
         self._set_state("ĐANG TÍNH" if self.is_running else "CHỜ TÍNH TOÁN", "busy" if self.is_running else "idle")
         self.status.set("Dữ liệu đã đổi — cần tính lại" if not self.is_running else "Đang giải; thay đổi đầu vào sẽ cần tính lại")
@@ -876,6 +1391,9 @@ class PowerFlowApp(tk.Tk):
         for button in self.export_buttons:
             button.configure(state="normal")
 
+        if hasattr(self, "update_comparison"):
+            self.update_comparison()
+
         warnings = len(result["warnings"])
         self._set_state("HỘI TỤ · CẢNH BÁO" if warnings else "ĐÃ HỘI TỤ", "warning" if warnings else "success")
         self.status.set(f"{elapsed_ms:.1f} ms · {result['iterations']} bước · Sai lệch {result['max_mismatch_pu']:.2e} p.u. · {warnings} cảnh báo")
@@ -961,6 +1479,24 @@ class PowerFlowApp(tk.Tk):
     def export(self, extension):
         if self.result is None or self.signature() != self.result_source:
             self.status.set("Hãy tính toán thành công dữ liệu hiện tại trước khi xuất")
+            return
+
+        if extension == "xlsx":
+            name = filedialog.asksaveasfilename(
+                parent=self,
+                title="Xuất báo cáo Excel 4 sheets",
+                defaultextension=".xlsx",
+                initialfile="ket_qua_trao_luu.xlsx",
+                filetypes=[("Bảng tính Excel 4 sheets", "*.xlsx"), ("Tất cả", "*.*")]
+            )
+            if not name:
+                return
+            try:
+                export_full_results_to_excel(self.result, name)
+                self.status.set(f"Đã xuất báo cáo Excel đầy đủ: {Path(name).name}")
+                messagebox.showinfo("Thành công", f"Đã xuất báo cáo Excel (4 sheets) thành công:\n{name}", parent=self)
+            except Exception as exc:
+                messagebox.showerror("Không xuất được Excel", str(exc), parent=self)
             return
 
         if extension == "csv":

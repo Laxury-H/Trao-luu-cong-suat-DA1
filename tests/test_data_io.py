@@ -6,6 +6,7 @@ import unittest
 from data_io import (
     create_sample_excel_template,
     export_case_to_excel,
+    export_full_results_to_excel,
     load_from_csv,
     load_from_excel,
 )
@@ -67,6 +68,14 @@ class DataIoTests(unittest.TestCase):
         self.assertEqual(len(retrieved["buses"]), 3)
         self.assertEqual(len(retrieved["branches"]), 3)
         editor.destroy()
+
+    def test_export_full_results_to_excel(self):
+        case = load_case(ROOT / "examples" / "luoi_3_nut.json")
+        res = solve_power_flow(case)
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "full_report.xlsx"
+            export_full_results_to_excel(res, p)
+            self.assertTrue(p.exists())
 
 
 if __name__ == "__main__":

@@ -1,0 +1,43 @@
+{
+  "name": "IEEE 14-bus System (Chuẩn MATPOWER)",
+  "source": "Chuẩn hóa lưới điện IEEE 14-bus, MATPOWER case14",
+  "base_mva": 100,
+  "buses": [
+    {"id": "1", "type": "SLACK", "vm_pu": 1.06, "va_deg": 0.0, "base_kv": 135},
+    {"id": "2", "type": "PV", "vm_pu": 1.045, "va_deg": 0.0, "pg_mw": 40.0, "pd_mw": 21.7, "qd_mvar": 12.7, "qmin_mvar": -40.0, "qmax_mvar": 50.0, "base_kv": 135},
+    {"id": "3", "type": "PV", "vm_pu": 1.01, "va_deg": 0.0, "pg_mw": 0.0, "pd_mw": 94.2, "qd_mvar": 19.0, "qmin_mvar": 0.0, "qmax_mvar": 40.0, "base_kv": 135},
+    {"id": "4", "type": "PQ", "vm_pu": 1.0, "va_deg": 0.0, "pd_mw": 47.8, "qd_mvar": -3.9, "base_kv": 135},
+    {"id": "5", "type": "PQ", "vm_pu": 1.0, "va_deg": 0.0, "pd_mw": 7.6, "qd_mvar": 1.6, "base_kv": 135},
+    {"id": "6", "type": "PV", "vm_pu": 1.07, "va_deg": 0.0, "pg_mw": 0.0, "pd_mw": 11.2, "qd_mvar": 7.5, "qmin_mvar": -6.0, "qmax_mvar": 24.0, "base_kv": 135},
+    {"id": "7", "type": "PQ", "vm_pu": 1.0, "va_deg": 0.0, "base_kv": 135},
+    {"id": "8", "type": "PV", "vm_pu": 1.09, "va_deg": 0.0, "pg_mw": 0.0, "pd_mw": 0.0, "qd_mvar": 0.0, "qmin_mvar": -6.0, "qmax_mvar": 24.0, "base_kv": 135},
+    {"id": "9", "type": "PQ", "vm_pu": 1.0, "va_deg": 0.0, "pd_mw": 29.5, "qd_mvar": 16.6, "b_shunt_pu": 0.19, "base_kv": 135},
+    {"id": "10", "type": "PQ", "vm_pu": 1.0, "va_deg": 0.0, "pd_mw": 9.0, "qd_mvar": 5.8, "base_kv": 135},
+    {"id": "11", "type": "PQ", "vm_pu": 1.0, "va_deg": 0.0, "pd_mw": 3.5, "qd_mvar": 1.8, "base_kv": 135},
+    {"id": "12", "type": "PQ", "vm_pu": 1.0, "va_deg": 0.0, "pd_mw": 6.1, "qd_mvar": 1.6, "base_kv": 135},
+    {"id": "13", "type": "PQ", "vm_pu": 1.0, "va_deg": 0.0, "pd_mw": 13.5, "qd_mvar": 5.8, "base_kv": 135},
+    {"id": "14", "type": "PQ", "vm_pu": 1.0, "va_deg": 0.0, "pd_mw": 14.9, "qd_mvar": 5.0, "base_kv": 135}
+  ],
+  "branches": [
+    {"id": "L1_2", "from_bus": "1", "to_bus": "2", "r_pu": 0.01938, "x_pu": 0.05917, "b_pu": 0.0528, "rate_mva": 120},
+    {"id": "L1_5", "from_bus": "1", "to_bus": "5", "r_pu": 0.05403, "x_pu": 0.22304, "b_pu": 0.0492, "rate_mva": 65},
+    {"id": "L2_3", "from_bus": "2", "to_bus": "3", "r_pu": 0.04699, "x_pu": 0.19797, "b_pu": 0.0438, "rate_mva": 65},
+    {"id": "L2_4", "from_bus": "2", "to_bus": "4", "r_pu": 0.05811, "x_pu": 0.17632, "b_pu": 0.0340, "rate_mva": 65},
+    {"id": "L2_5", "from_bus": "2", "to_bus": "5", "r_pu": 0.05695, "x_pu": 0.17388, "b_pu": 0.0346, "rate_mva": 65},
+    {"id": "L3_4", "from_bus": "3", "to_bus": "4", "r_pu": 0.06701, "x_pu": 0.17103, "b_pu": 0.0128, "rate_mva": 65},
+    {"id": "L4_5", "from_bus": "4", "to_bus": "5", "r_pu": 0.01335, "x_pu": 0.04211, "b_pu": 0.0, "rate_mva": 65},
+    {"id": "L4_7", "from_bus": "4", "to_bus": "7", "r_pu": 0.0, "x_pu": 0.20912, "tap": 0.978, "rate_mva": 65},
+    {"id": "L4_9", "from_bus": "4", "to_bus": "9", "r_pu": 0.0, "x_pu": 0.55618, "tap": 0.969, "rate_mva": 65},
+    {"id": "L5_6", "from_bus": "5", "to_bus": "6", "r_pu": 0.0, "x_pu": 0.25202, "tap": 0.932, "rate_mva": 65},
+    {"id": "L6_11", "from_bus": "6", "to_bus": "11", "r_pu": 0.09498, "x_pu": 0.19890, "b_pu": 0.0, "rate_mva": 32},
+    {"id": "L6_12", "from_bus": "6", "to_bus": "12", "r_pu": 0.12291, "x_pu": 0.25581, "b_pu": 0.0, "rate_mva": 32},
+    {"id": "L6_13", "from_bus": "6", "to_bus": "13", "r_pu": 0.06615, "x_pu": 0.13027, "b_pu": 0.0, "rate_mva": 32},
+    {"id": "L7_8", "from_bus": "7", "to_bus": "8", "r_pu": 0.0, "x_pu": 0.17615, "rate_mva": 32},
+    {"id": "L7_9", "from_bus": "7", "to_bus": "9", "r_pu": 0.0, "x_pu": 0.11001, "rate_mva": 32},
+    {"id": "L9_10", "from_bus": "9", "to_bus": "10", "r_pu": 0.03181, "x_pu": 0.08450, "b_pu": 0.0, "rate_mva": 32},
+    {"id": "L9_14", "from_bus": "9", "to_bus": "14", "r_pu": 0.12711, "x_pu": 0.27038, "b_pu": 0.0, "rate_mva": 32},
+    {"id": "L10_11", "from_bus": "10", "to_bus": "11", "r_pu": 0.08205, "x_pu": 0.19207, "b_pu": 0.0, "rate_mva": 32},
+    {"id": "L12_13", "from_bus": "12", "to_bus": "13", "r_pu": 0.22092, "x_pu": 0.19988, "b_pu": 0.0, "rate_mva": 32},
+    {"id": "L13_14", "from_bus": "13", "to_bus": "14", "r_pu": 0.17093, "x_pu": 0.34802, "b_pu": 0.0, "rate_mva": 32}
+  ]
+}
