@@ -114,5 +114,36 @@ class UiUpgradeTests(unittest.TestCase):
             self.assertIn("SLACK", content)
 
 
+    def test_force_layout_and_large_network(self):
+        """Kiểm tra thuật toán bố cục tự động và lưới 30 nút."""
+        self.app.load_example("luoi_30_nut.json")
+        res = self.calculate()
+        self.assertEqual(len(res["buses"]), 30)
+        diagram = self.app.diagram
+        self.assertEqual(len(diagram.bus_coords), 30)
+
+        # Kiểm tra Force layout
+        diagram.apply_force_layout()
+        self.assertEqual(len(diagram.bus_coords), 30)
+
+        # Kiểm tra Concentric layout
+        diagram.apply_concentric_layout()
+        self.assertEqual(len(diagram.bus_coords), 30)
+
+        # Kiểm tra Fit to view
+        diagram.fit_to_view()
+        self.assertGreater(diagram.scale, 0.0)
+
+        # Kiểm tra chế độ chọn tiêu điểm nút
+        diagram._find_bus_at = lambda x, y: "10"
+        class ClickEvent:
+            x = 100
+            y = 100
+        diagram._on_canvas_press(ClickEvent())
+        self.assertEqual(diagram.selected_bus, "10")
+        diagram._clear_selection()
+        self.assertIsNone(diagram.selected_bus)
+
+
 if __name__ == "__main__":
     unittest.main()

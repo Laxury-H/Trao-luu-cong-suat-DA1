@@ -77,6 +77,7 @@ TEAL, LINE, RED = "#0d9488", "#e2e8f0", "#dc2626"
 EXAMPLES = {
     "3 nút · SLACK / PV / PQ": "luoi_3_nut.json",
     "9 nút · MATPOWER case9": "luoi_9_nut.json",
+    "30 nút · IEEE 30-bus": "luoi_30_nut.json",
     "3 nút · PV chạm Qmax": "luoi_3_nut_gioi_han_q.json"
 }
 
@@ -1037,5 +1038,26 @@ class PowerFlowApp(tk.Tk):
         super().destroy()
 
 
+def enable_high_dpi():
+    """Kích hoạt chế độ nét cao High-DPI trên Windows để khắc phục hiện tượng mờ / vỡ nét."""
+    import sys
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            # Per-Monitor V2 DPI Awareness (Windows 10 1703+)
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            try:
+                # System DPI Awareness (Windows 8.1+)
+                ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            except Exception:
+                try:
+                    # Windows Vista / 7
+                    ctypes.windll.user32.SetProcessDPIAware()
+                except Exception:
+                    pass
+
+
 if __name__ == "__main__":
+    enable_high_dpi()
     PowerFlowApp().mainloop()
