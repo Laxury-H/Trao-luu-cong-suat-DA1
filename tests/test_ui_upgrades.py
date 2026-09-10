@@ -18,7 +18,16 @@ class UiUpgradeTests(unittest.TestCase):
         for name in ("showerror", "showinfo", "showwarning", "askyesnocancel"):
             self.dialogs[name] = self.enterContext(patch(f"gui.messagebox.{name}", return_value=None))
         self.save_dialog = self.enterContext(patch("gui.filedialog.asksaveasfilename", return_value=""))
-        self.app = PowerFlowApp()
+        for attempt in range(3):
+            try:
+                self.app = PowerFlowApp()
+                break
+            except Exception as exc:
+                if "no display name" in str(exc) or "couldn't connect to display" in str(exc):
+                    self.skipTest(f"Tk display unavailable: {exc}")
+                if attempt == 2:
+                    raise
+                time.sleep(0.2)
         self.app.withdraw()
         self.addCleanup(self.app.destroy)
         self.pump()
